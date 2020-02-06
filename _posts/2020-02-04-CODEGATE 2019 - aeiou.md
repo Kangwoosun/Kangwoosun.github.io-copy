@@ -190,21 +190,21 @@ ROP gadget을 엮을 때 조심해야될 부분이 fs 레지스터가 가리키�
 
 ## 포스팅할 내용
 
-```
-1. linux stack canary (ELF Auxiliary Vectors)
+
+>1. linux stack canary (ELF Auxiliary Vectors)
 https://nekoplu5.tistory.com/206
 
-2. TLS, TCB 관련 정리
+>2. TLS, TCB 관련 정리
 https://m.blog.naver.com/PostView.nhn?blogId=dmbs335&logNo=221774719137&navType=tl
 https://chao-tic.github.io/blog/2018/12/25/tls
 https://tribal1012.tistory.com/157
 
-3. Dynamic Linker & Full RELRO
+>3. Dynamic Linker & Full RELRO
 
-4. VDSO
+>4. VDSO
 
-5. Compile, make, linker
-```
+>5. Compile, make, linker
+
 
 ## Reference
 ```
