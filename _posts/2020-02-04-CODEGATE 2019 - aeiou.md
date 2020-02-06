@@ -179,11 +179,11 @@ ROP gadget을 엮을 때 조심해야될 부분이 fs 레지스터가 가리키�
 
 >1. Thread에서 함수를 실행할때 스택에 TLS, TCB를 할당한다.
 
->2. TCB를 Overwrite하여 canary를 우회할 수 있다.
+2. TCB를 Overwrite하여 canary를 우회할 수 있다.
 
->3. canary는 TCB 구조체의 stack_guard이다.
+3. canary는 TCB 구조체의 stack_guard이다.
 
->4. 32bit는 gs:0x14, 64bit는 fs:0x28을 참조하여 canary를 가져온다.
+4. 32bit는 gs:0x14, 64bit는 fs:0x28을 참조하여 canary를 가져온다.
 (32비트와 64비트 TCB구조체를 보면 offset 차이가 나기 때문이다.)
 
 
