@@ -197,6 +197,7 @@ https://nekoplu5.tistory.com/206
 2. TLS, TCB 관련 정리
 https://m.blog.naver.com/PostView.nhn?blogId=dmbs335&logNo=221774719137&navType=tl
 https://chao-tic.github.io/blog/2018/12/25/tls
+https://tribal1012.tistory.com/157
 
 3. Dynamic Linker & Full RELRO
 
@@ -208,6 +209,7 @@ https://chao-tic.github.io/blog/2018/12/25/tls
 ## Reference
 
 https://nekoplu5.tistory.com/206
+https://tribal1012.tistory.com/157
 https://m.blog.naver.com/PostView.nhn?blogId=dmbs335&logNo=221774719137&navType=tl
 https://chao-tic.github.io/blog/2018/12/25/tls
 https://daehee87.tistory.com/466
