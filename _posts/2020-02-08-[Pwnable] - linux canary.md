@@ -1,4 +1,9 @@
-
+---
+title: [Pwnable] - linux canary
+categories:
+ - pwnable
+tags: pwn, canary, tls
+---
 # linux stack canary (main thread)
 
 
