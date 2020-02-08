@@ -177,33 +177,32 @@ ROP gadget을 엮을 때 조심해야될 부분이 fs 레지스터가 가리키�
 ## 공부한 내용 
 
 
->1. Thread에서 함수를 실행할때 스택에 TLS, TCB를 할당한다.
+- Thread에서 함수를 실행할때 스택에 TLS, TCB를 할당한다.
 
-2. TCB를 Overwrite하여 canary를 우회할 수 있다.
+- TCB를 Overwrite하여 canary를 우회할 수 있다.
 
-3. canary는 TCB 구조체의 stack_guard이다.
+- canary는 TCB 구조체의 stack_guard이다.
 
-4. 32bit는 gs:0x14, 64bit는 fs:0x28을 참조하여 canary를 가져온다.
-(32비트와 64비트 TCB구조체를 보면 offset 차이가 나기 때문이다.)
+- 32bit는 gs:0x14, 64bit는 fs:0x28을 참조하여 canary를 가져온다.
 
 
 
 ## 포스팅할 내용
 
 
->1. linux stack canary (ELF Auxiliary Vectors)
-https://nekoplu5.tistory.com/206
+1. linux stack canary (ELF Auxiliary Vectors)
+- https://nekoplu5.tistory.com/206
 
->2. TLS, TCB 관련 정리
-https://m.blog.naver.com/PostView.nhn?blogId=dmbs335&logNo=221774719137&navType=tl
-https://chao-tic.github.io/blog/2018/12/25/tls
-https://tribal1012.tistory.com/157
+2. TLS, TCB 관련 정리
+- https://m.blog.naver.com/PostView.nhn?blogId=dmbs335&logNo=221774719137&navType=tl
+- https://chao-tic.github.io/blog/2018/12/25/tls
+- https://tribal1012.tistory.com/157
 
->3. Dynamic Linker & Full RELRO
+3. Dynamic Linker & Full RELRO
 
->4. VDSO
+4. VDSO
 
->5. Compile, make, linker
+5. Compile, make, linker
 
 
 ## Reference
