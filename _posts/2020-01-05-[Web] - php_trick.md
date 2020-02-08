@@ -1,5 +1,5 @@
 ---
-title: [Web] - PHP simple trick (1)
+title: \[Web\] - PHP simple trick (1)
 categories:
  - Web
 tags: php, web
