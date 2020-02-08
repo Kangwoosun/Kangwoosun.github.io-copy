@@ -1,5 +1,5 @@
 ---
-title: \[Pwnable\] - linux canary
+title: Pwnable - linux canary
 categories:
  - pwnable
 tags: pwn, canary, tls

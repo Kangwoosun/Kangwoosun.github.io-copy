@@ -1,5 +1,5 @@
 ---
-title: \[CODEGATE 2019\] - aeiou
+title: CODEGATE 2019 - aeiou
 categories:
  - pwnable
 tags: codegate, pwn, tls
