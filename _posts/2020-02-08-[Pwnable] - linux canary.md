@@ -34,7 +34,6 @@ Epilogue
 0x400fe3:    xor    rax,QWORD PTR fs:0x28
 0x400fec:    je     0x400ff3
 0x400fee:    call   __stack_chk_fail)
-
 ```
 
 여기서 fs:0x28은 fs 레지스터가 가리키는 포인터의 0x28 offset의 값을 말하는데
@@ -86,7 +85,7 @@ typedef struct
 # linux stack canary (non main thread)
 
 
-`pthread struct`
+## pthread struct
 
 ```c
 struct pthread
@@ -289,7 +288,7 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 `ALLOCATE_STACK (iattr, &pd)`는 추후에 포스팅하도록 하겠다.
 
-`THREAD_COPY_STACK_GUARD (pd)`
+## THREAD_COPY_STACK_GUARD (pd)
 
 ```c
 # define THREAD_COPY_STACK_GUARD(descr) \
@@ -327,32 +326,176 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 	 
 ```
 
-`THREAD_SELF`는 pthread의 header.self를 참조하는데 해당 값은 TLS, 즉 TCB 구조체를 가리키고 있다.
+`THREAD_SELF`는 pthread의 header.self를 참조하게 되어 현재 thread의 TCB 구조체를 가리키고 있다.
 
 `THREAD_GETMEM`는 descr->member의 size에 따라 비트를 체크해서 해당 비트 (ex, 64bit)에 맞게 fs:offset에 값을 넣어주고 있다.
 
-`THREAD_COPY_STACK_GUARD`는 현재 thread(THREAD_SELF)의 stack_guard값을 인자로 넣은 pthread구조체에 복사해주는 매크로인 것이다.
+`THREAD_COPY_STACK_GUARD`는 pd->geader.stack_guard = THREAD_SELF->header.stack_guard 동작을 수행하게 되는것이다.
 
-따라서 pthread_created에서 `ALLOCATE_STACK (iattr, &pd)`로 library stack 공간에 pd 구조체의 공간을 제공해주고 `THREAD_COPY_STACK_GUARD (pd)`로 만들어지는 thread의 tcb구조체에 stack_guard를 세팅해주는 역할을 해준다.
+따라서 pthread_created에서 `ALLOCATE_STACK (iattr, &pd)`로 library stack 공간에 pd 구조체의 공간을 제공해주고
 
-그래서 non main thread의 stack에서 stack buffer overflow가 발생하게 되면 library stack의 공간에 할당된 stack_guard의 값을 건들 수 있게 된다.
+`THREAD_COPY_STACK_GUARD (pd)`로 만들어지는 thread의 tcb구조체에 stack_guard를 세팅해주는 역할을 해준다.
+
+그래서 non main thread의 stack에서 buffer overflow가 발생하게 되면 library stack의 공간에 할당된 stack_guard의 값에 접근이 가능해진다. (non main thread가 library stack을 사용하기 때문에)
 
 이를 통해 canary를 우회할 수 있는 가능성이 생기는 것이다.
+<br/>
+이렇게 non main thread에서 main thread의 canary를 복사해오는 과정을 살펴보았으니
 
-이렇게 non main thread에서 main thread의 canary를 복사해오는 과정을 살펴보았으니 main thread에서 어떻게 canary값을 초기화 해주는 지 살펴보도록 하겠다.
+이번에는 main thread에서 어떻게 canary값을 초기화 해주는 지 살펴보도록 하겠다.
 
 
 # linux stack canary (main thread)
 
-```c
-```
-```c
-```
-```c
-```
-
+소스코드 상에서 위에서 살펴보았던 `THREAD_COPY_STACK_GUARD` 매크로 바로 위에 `THREAD_SET_STACK_GUARD`라는 매크로가 존재하는 것을 볼 수 있었다.
 
 ```c
+# define THREAD_SET_STACK_GUARD(value) \
+    THREAD_SETMEM (THREAD_SELF, header.stack_guard, value)
+```
+
+매크로 내용은 단순하다. 현재 thread의 stack_guad를 value로 설정해주는 동작을 한다.
+
+해당 매크로가 어디서 쓰이는지 알아내면 어디서 처음 canary를 설정해주는지 알 수 있을 것이다.
+
+살펴보니 `security_init` 과 `libc_start_amin`이 존재했다.
+
+
+## security_init
+
+```c
+static void
+security_init (void)
+{
+  /* Set up the stack checker's canary.  */
+  uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random);
+#ifdef THREAD_SET_STACK_GUARD
+  THREAD_SET_STACK_GUARD (stack_chk_guard);
+#else
+  __stack_chk_guard = stack_chk_guard;
+#endif
+  /* Set up the pointer guard as well, if necessary.  */
+  uintptr_t pointer_chk_guard
+    = _dl_setup_pointer_guard (_dl_random, stack_chk_guard);
+#ifdef THREAD_SET_POINTER_GUARD
+  THREAD_SET_POINTER_GUARD (pointer_chk_guard);
+#endif
+  __pointer_chk_guard_local = pointer_chk_guard;
+  /* We do not need the _dl_random value anymore.  The less
+     information we leave behind, the better, so clear the
+     variable.  */
+  _dl_random = NULL;
+}
+
+```
+
+`security_init`은 `dl_main`에서 호출하는데 `dl_main`은 Dynamic-link와 관련이 있어서 해당 내용은 따로 포스팅을 진행하도록 하겠다. 
+
+`dl_main`이 호출되는 경로를 알아보고 싶으면 아래의 링크를 참고하면 되겠다.
+
+link : `https://www.gnu.org/software/hurd/glibc/startup.html`
+
+## libc_start_main
+
+```c
+/* Note: the fini parameter is ignored here for shared library.  It
+   is registered with __cxa_atexit.  This had the disadvantage that
+   finalizers were called in more than one place.  */
+STATIC int
+LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
+                 int argc, char **argv,
+#ifdef LIBC_START_MAIN_AUXVEC_ARG
+                 ElfW(auxv_t) *auxvec,
+#endif
+                 __typeof (main) init,
+                 void (*fini) (void),
+                 void (*rtld_fini) (void), void *stack_end)
+{
+
+  .
+  .
+  .
+
+  /* Initialize very early so that tunables can use it.  */
+  __libc_init_secure ();
+  __tunables_init (__environ);
+  ARCH_INIT_CPU_FEATURES ();
+  /* Perform IREL{,A} relocations.  */
+  ARCH_SETUP_IREL ();
+  /* The stack guard goes into the TCB, so initialize it early.  */
+  ARCH_SETUP_TLS ();
+  /* In some architectures, IREL{,A} relocations happen after TLS setup in
+     order to let IFUNC resolvers benefit from TCB information, e.g. powerpc's
+     hwcap and platform fields available in the TCB.  */
+  ARCH_APPLY_IREL ();
+  /* Set up the stack checker's canary.  */
+  
+  
+  uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random);
+# ifdef THREAD_SET_STACK_GUARD
+  THREAD_SET_STACK_GUARD (stack_chk_guard);
+  
+  .
+  .
+  .
+  
+      result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
+    }
+  else
+    {
+      /* Remove the thread-local data.  */
+# ifdef SHARED
+      PTHFCT_CALL (ptr__nptl_deallocate_tsd, ());
+# else
+      extern void __nptl_deallocate_tsd (void) __attribute ((weak));
+      __nptl_deallocate_tsd ();
+# endif
+      /* One less thread.  Decrement the counter.  If it is zero we
+         terminate the entire process.  */
+      result = 0;
+# ifdef SHARED
+      unsigned int *ptr = __libc_pthread_functions.ptr_nthreads;
+#  ifdef PTR_DEMANGLE
+      PTR_DEMANGLE (ptr);
+#  endif
+# else
+      extern unsigned int __nptl_nthreads __attribute ((weak));
+      unsigned int *const ptr = &__nptl_nthreads;
+# endif
+      if (! atomic_decrement_and_test (ptr))
+        /* Not much left to do but to exit the thread, not the process.  */
+        __exit_thread ();
+    }
+#else
+  /* Nothing fancy, just call the function.  */
+  result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
+#endif
+  exit (result);
+}
+
+```
+
+`libc_start_main`도 linker와 관련이 있지만 본 포스팅에서는 canary 초기화에 대한 내용에 집중하도록 하겠다.
+
+먼저
+
+```
+uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random)
+
+THREAD_SET_STACK_GUARD (stack_chk_guard)
+```
+
+에서 `_dl_setup_stack_chk_guard`와 그 인자로 들어가는 `_dl_random`에 대해 분석을 해보자.
+
+
+### _dl_random
+
+`glibc/elf/dl-support.c`
+
+```c
+/* Random data provided by the kernel.  */
+void *_dl_random;
+
 void
 _dl_aux_init (ElfW(auxv_t) *av)
 {
@@ -420,11 +563,7 @@ _dl_aux_init (ElfW(auxv_t) *av)
         __libc_enable_secure_decided = 1;
         break;
       case AT_RANDOM:
-	  
-	  
         _dl_random = (void *) av->a_un.a_val;
-		
-		
         break;
 # ifdef DL_PLATFORM_AUXV
       DL_PLATFORM_AUXV
@@ -436,47 +575,212 @@ _dl_aux_init (ElfW(auxv_t) *av)
       __libc_enable_secure_decided = 1;
     }
 }
-#endif
+
 ```
 
+`glibc/sysdeps/generic/ldsodefs.h`
 
 ```c
-static void
-security_init (void)
-{
-  /* Set up the stack checker's canary.  */
-  uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random);
-#ifdef THREAD_SET_STACK_GUARD
-  THREAD_SET_STACK_GUARD (stack_chk_guard);
-#else
-  __stack_chk_guard = stack_chk_guard;
-#endif
-  /* Set up the pointer guard as well, if necessary.  */
-  uintptr_t pointer_chk_guard
-    = _dl_setup_pointer_guard (_dl_random, stack_chk_guard);
-#ifdef THREAD_SET_POINTER_GUARD
-  THREAD_SET_POINTER_GUARD (pointer_chk_guard);
-#endif
-  __pointer_chk_guard_local = pointer_chk_guard;
-  /* We do not need the _dl_random value anymore.  The less
-     information we leave behind, the better, so clear the
-     variable.  */
-  _dl_random = NULL;
-}
+/* Random data provided by the kernel.  */
+extern void *_dl_random attribute_hidden attribute_relro;
 
 ```
 
 
+`glibc/elf/dl-sysdep.c`
 
-`uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random)`
+```c
+ElfW(Addr)
+_dl_sysdep_start (void **start_argptr,
+                  void (*dl_main) (const ElfW(Phdr) *phdr, ElfW(Word) phnum,
+                                   ElfW(Addr) *user_entry, ElfW(auxv_t) *auxv))
+{
+  const ElfW(Phdr) *phdr = NULL;
+  ElfW(Word) phnum = 0;
+  ElfW(Addr) user_entry;
+  ElfW(auxv_t) *av;
+#ifdef HAVE_AUX_SECURE
+# define set_seen(tag) (tag)        /* Evaluate for the side effects.  */
+# define set_seen_secure() ((void) 0)
+#else
+  uid_t uid = 0;
+  gid_t gid = 0;
+  unsigned int seen = 0;
+# define set_seen_secure() (seen = -1)
+# ifdef HAVE_AUX_XID
+#  define set_seen(tag) (tag)        /* Evaluate for the side effects.  */
+# else
+#  define M(type) (1 << (type))
+#  define set_seen(tag) seen |= M ((tag)->a_type)
+# endif
+#endif
+#ifdef NEED_DL_SYSINFO
+  uintptr_t new_sysinfo = 0;
+#endif
+  __libc_stack_end = DL_STACK_END (start_argptr);
+  DL_FIND_ARG_COMPONENTS (start_argptr, _dl_argc, _dl_argv, _environ,
+                          GLRO(dl_auxv));
+  user_entry = (ElfW(Addr)) ENTRY_POINT;
+  GLRO(dl_platform) = NULL; /* Default to nothing known about the platform.  */
+  for (av = GLRO(dl_auxv); av->a_type != AT_NULL; set_seen (av++))
+    switch (av->a_type)
+      {
+      case AT_PHDR:
+        phdr = (void *) av->a_un.a_val;
+        break;
+      case AT_PHNUM:
+        phnum = av->a_un.a_val;
+        break;
+      case AT_PAGESZ:
+        GLRO(dl_pagesize) = av->a_un.a_val;
+        break;
+      case AT_ENTRY:
+        user_entry = av->a_un.a_val;
+        break;
+#ifdef NEED_DL_BASE_ADDR
+      case AT_BASE:
+        _dl_base_addr = av->a_un.a_val;
+        break;
+#endif
+#ifndef HAVE_AUX_SECURE
+      case AT_UID:
+      case AT_EUID:
+        uid ^= av->a_un.a_val;
+        break;
+      case AT_GID:
+      case AT_EGID:
+        gid ^= av->a_un.a_val;
+        break;
+#endif
+      case AT_SECURE:
+#ifndef HAVE_AUX_SECURE
+        seen = -1;
+#endif
+        __libc_enable_secure = av->a_un.a_val;
+        break;
+      case AT_PLATFORM:
+        GLRO(dl_platform) = (void *) av->a_un.a_val;
+        break;
+      case AT_HWCAP:
+        GLRO(dl_hwcap) = (unsigned long int) av->a_un.a_val;
+        break;
+      case AT_HWCAP2:
+        GLRO(dl_hwcap2) = (unsigned long int) av->a_un.a_val;
+        break;
+      case AT_CLKTCK:
+        GLRO(dl_clktck) = av->a_un.a_val;
+        break;
+      case AT_FPUCW:
+        GLRO(dl_fpu_control) = av->a_un.a_val;
+        break;
+#ifdef NEED_DL_SYSINFO
+      case AT_SYSINFO:
+        new_sysinfo = av->a_un.a_val;
+        break;
+#endif
+#ifdef NEED_DL_SYSINFO_DSO
+      case AT_SYSINFO_EHDR:
+        GLRO(dl_sysinfo_dso) = (void *) av->a_un.a_val;
+        break;
+#endif
+      case AT_RANDOM:
+        _dl_random = (void *) av->a_un.a_val;
+        break;
+#ifdef DL_PLATFORM_AUXV
+      DL_PLATFORM_AUXV
+#endif
+      }
+#ifndef HAVE_AUX_SECURE
+  if (seen != -1)
+    {
+      /* Fill in the values we have not gotten from the kernel through the
+         auxiliary vector.  */
+# ifndef HAVE_AUX_XID
+#  define SEE(UID, var, uid) \
+   if ((seen & M (AT_##UID)) == 0) var ^= __get##uid ()
+      SEE (UID, uid, uid);
+      SEE (EUID, uid, euid);
+      SEE (GID, gid, gid);
+      SEE (EGID, gid, egid);
+# endif
+      /* If one of the two pairs of IDs does not match this is a setuid
+         or setgid run.  */
+      __libc_enable_secure = uid | gid;
+    }
+#endif
+#ifndef HAVE_AUX_PAGESIZE
+  if (GLRO(dl_pagesize) == 0)
+    GLRO(dl_pagesize) = __getpagesize ();
+#endif
+#ifdef NEED_DL_SYSINFO
+  if (new_sysinfo != 0)
+    {
+# ifdef NEED_DL_SYSINFO_DSO
+      /* Only set the sysinfo value if we also have the vsyscall DSO.  */
+      if (GLRO(dl_sysinfo_dso) != 0)
+# endif
+        GLRO(dl_sysinfo) = new_sysinfo;
+    }
+#endif
+  __tunables_init (_environ);
+#ifdef DL_SYSDEP_INIT
+  DL_SYSDEP_INIT;
+#endif
+#ifdef DL_PLATFORM_INIT
+  DL_PLATFORM_INIT;
+#endif
+  /* Determine the length of the platform name.  */
+  if (GLRO(dl_platform) != NULL)
+    GLRO(dl_platformlen) = strlen (GLRO(dl_platform));
+  if (__sbrk (0) == _end)
+    /* The dynamic linker was run as a program, and so the initial break
+       starts just after our bss, at &_end.  The malloc in dl-minimal.c
+       will consume the rest of this page, so tell the kernel to move the
+       break up that far.  When the user program examines its break, it
+       will see this new value and not clobber our data.  */
+    __sbrk (GLRO(dl_pagesize)
+            - ((_end - (char *) 0) & (GLRO(dl_pagesize) - 1)));
+  /* If this is a SUID program we make sure that FDs 0, 1, and 2 are
+     allocated.  If necessary we are doing it ourself.  If it is not
+     possible we stop the program.  */
+  if (__builtin_expect (__libc_enable_secure, 0))
+    __libc_check_standard_fds ();
+  (*dl_main) (phdr, phnum, &user_entry, GLRO(dl_auxv));
+  return user_entry;
+}
+```
 
-`THREAD_SET_STACK_GUARD (stack_chk_guard)`
 
+
+### __dl_setup_pointer_guard
+
+```c
+static inline uintptr_t __attribute__ ((always_inline))
+_dl_setup_stack_chk_guard (void *dl_random)
+{
+  union
+  {
+    uintptr_t num;
+    unsigned char bytes[sizeof (uintptr_t)];
+  } ret;
+  /* We need in the moment only 8 bytes on 32-bit platforms and 16
+     bytes on 64-bit platforms.  Therefore we can use the data
+     directly and not use the kernel-provided data to seed a PRNG.  */
+  memcpy (ret.bytes, dl_random, sizeof (ret));
+#if BYTE_ORDER == LITTLE_ENDIAN
+  ret.num &= ~(uintptr_t) 0xff;
+#elif BYTE_ORDER == BIG_ENDIAN
+  ret.num &= ~((uintptr_t) 0xff << (8 * (sizeof (ret) - 1)));
+#else
+# error "BYTE_ORDER unknown"
+#endif
+  return ret.num;
+}
+```
 
 # Referenece
 
 ```
-https://chao-tic.github.io/blog/2018/12/25/tls
 https://code.woboq.org/userspace/glibc/nptl/pthread_join.c.html
 https://code.woboq.org/userspace/glibc/nptl/pthread_create.c.html
 https://nekoplu5.tistory.com/206
