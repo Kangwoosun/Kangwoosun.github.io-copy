@@ -5,6 +5,8 @@ categories:
 tags: pwn, canary, tls
 ---
 
+# Introduction
+
 codegate 2019의 aeiou 문제를 풀면서 canary, tcb, tls 등에 관심이 생겨서 분석을 진행해보려고 한다.
 
 glibc 2.29 버전의 소스코드를 정적분석, glibc 2.19 버전으로 동적분석을 진행했다.
@@ -85,7 +87,7 @@ typedef struct
 # linux stack canary (non main thread)
 
 
-## pthread struct
+`pthread struct`
 
 ```c
 struct pthread
@@ -168,7 +170,7 @@ struct pthread
 pthread_create의 첫번째 인자로 들어가는 구조체다.
 
 
-## pthread_create
+`pthread_create`
 
 
 
@@ -283,10 +285,12 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 ```
 
-여기서 분석하고자 하는 부분이 `ALLOCATE_STACK (iattr, &pd)`와 `THREAD_COPY_STACK_GUARD (pd)`다.
+여기서 분석하고자 하는 부분이 `ALLOCATE_STACK (iattr, &pd)`, `THREAD_COPY_STACK_GUARD (pd)`이다.
 
 
-`ALLOCATE_STACK (iattr, &pd)`는 추후에 포스팅하도록 하겠다.
+## ALLOCATE_STACK (iattr, &pd) 
+
+추후에 포스팅예정
 
 ## THREAD_COPY_STACK_GUARD (pd)
 
@@ -358,10 +362,9 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 해당 매크로가 어디서 쓰이는지 알아내면 어디서 처음 canary를 설정해주는지 알 수 있을 것이다.
 
-살펴보니 `security_init` 과 `libc_start_amin`이 존재했다.
+분석해보면 `security_init`, `libc_start_main`에서 `THREAD_SET_STACK_GUARD`매크로를 호출하는 것을 볼 수 있다.
 
-
-## security_init
+`security_init`
 
 ```c
 static void
@@ -389,13 +392,8 @@ security_init (void)
 
 ```
 
-`security_init`은 `dl_main`에서 호출하는데 `dl_main`은 Dynamic-link와 관련이 있어서 해당 내용은 따로 포스팅을 진행하도록 하겠다. 
 
-`dl_main`이 호출되는 경로를 알아보고 싶으면 아래의 링크를 참고하면 되겠다.
-
-link : `https://www.gnu.org/software/hurd/glibc/startup.html`
-
-## libc_start_main
+`libc_start_main`
 
 ```c
 /* Note: the fini parameter is ignored here for shared library.  It
@@ -475,9 +473,14 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
 
 ```
 
-`libc_start_main`도 linker와 관련이 있지만 본 포스팅에서는 canary 초기화에 대한 내용에 집중하도록 하겠다.
+`security_init`, `libc_start_main`의 호출 스택을 따라가는 내용은 Dynamic-link와 관련이 있기 때문에
 
-먼저
+해당 내용은 따로 포스팅을 진행하도록 하고 본 포스팅에서는 canary 초기화에 대한 내용에 집중하도록 하겠다.
+
+따로 두 함수의 호출스택을 알아보고 싶으면 아래의 링크를 참고하면 되겠다.
+
+link : `https://www.gnu.org/software/hurd/glibc/startup.html`
+
 
 ```
 uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random)
@@ -485,17 +488,37 @@ uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random)
 THREAD_SET_STACK_GUARD (stack_chk_guard)
 ```
 
-에서 `_dl_setup_stack_chk_guard`와 그 인자로 들어가는 `_dl_random`에 대해 분석을 해보자.
+두 함수에서 동일하게 `THREAD_SET_STACK_GUARD`매크로가 호출 되는 부분이다.
+
+해당 매크로의 인자로 들어가는 stack_chk_guard의 값을 분석하기 위해서 `_dl_setup_stack_chk_guard`함수와 
+
+그 인자로 들어가는 `_dl_random`에 대해 분석을 해보자.
 
 
-### _dl_random
+## _dl_random
 
 `glibc/elf/dl-support.c`
 
 ```c
 /* Random data provided by the kernel.  */
 void *_dl_random;
+```
 
+`glibc/sysdeps/generic/ldsodefs.h`
+
+```c
+/* Random data provided by the kernel.  */
+extern void *_dl_random attribute_hidden attribute_relro;
+
+```
+
+소스코드에서 `_dl_random`가 kernel로 부터 제공받는 랜덤 데이터라고 알려준다.
+
+`_dl_aux_init`, `_dl_sysdep_start`에서 `_dl_random`의 값이 설정되는 것을 볼 수 있다.
+
+여기서부터의 내용은 `https://nekoplu5.tistory.com/206`를 참고했다.
+
+```c
 void
 _dl_aux_init (ElfW(auxv_t) *av)
 {
@@ -506,62 +529,10 @@ _dl_aux_init (ElfW(auxv_t) *av)
   for (; av->a_type != AT_NULL; ++av)
     switch (av->a_type)
       {
-      case AT_PAGESZ:
-        if (av->a_un.a_val != 0)
-          GLRO(dl_pagesize) = av->a_un.a_val;
-        break;
-      case AT_CLKTCK:
-        GLRO(dl_clktck) = av->a_un.a_val;
-        break;
-      case AT_PHDR:
-        GL(dl_phdr) = (const void *) av->a_un.a_val;
-        break;
-      case AT_PHNUM:
-        GL(dl_phnum) = av->a_un.a_val;
-        break;
-      case AT_PLATFORM:
-        GLRO(dl_platform) = (void *) av->a_un.a_val;
-        break;
-      case AT_HWCAP:
-        GLRO(dl_hwcap) = (unsigned long int) av->a_un.a_val;
-        break;
-      case AT_HWCAP2:
-        GLRO(dl_hwcap2) = (unsigned long int) av->a_un.a_val;
-        break;
-      case AT_FPUCW:
-        GLRO(dl_fpu_control) = av->a_un.a_val;
-        break;
-#ifdef NEED_DL_SYSINFO
-      case AT_SYSINFO:
-        GL(dl_sysinfo) = av->a_un.a_val;
-        break;
-#endif
-#ifdef NEED_DL_SYSINFO_DSO
-      case AT_SYSINFO_EHDR:
-        GL(dl_sysinfo_dso) = (void *) av->a_un.a_val;
-        break;
-#endif
-      case AT_UID:
-        uid ^= av->a_un.a_val;
-        seen |= 1;
-        break;
-      case AT_EUID:
-        uid ^= av->a_un.a_val;
-        seen |= 2;
-        break;
-      case AT_GID:
-        gid ^= av->a_un.a_val;
-        seen |= 4;
-        break;
-      case AT_EGID:
-        gid ^= av->a_un.a_val;
-        seen |= 8;
-        break;
-      case AT_SECURE:
-        seen = -1;
-        __libc_enable_secure = av->a_un.a_val;
-        __libc_enable_secure_decided = 1;
-        break;
+		  .
+		  .
+		  .
+
       case AT_RANDOM:
         _dl_random = (void *) av->a_un.a_val;
         break;
@@ -578,13 +549,14 @@ _dl_aux_init (ElfW(auxv_t) *av)
 
 ```
 
-`glibc/sysdeps/generic/ldsodefs.h`
+`_dl_random = (void *) av->a_un.a_val`에서 `av`의 데이터타입인 `auxv_t`는 Auxiliary Vectors와 관련된 데이터이다.
 
-```c
-/* Random data provided by the kernel.  */
-extern void *_dl_random attribute_hidden attribute_relro;
+관련 내용은 따로 포스팅할 예정이므로 간단하게 설명하자면
 
-```
+file을 실행할때 인자로 넘어가는 argc, argv, envp 뒤에 붙게되는데, 커널에서 제공하는 데이터 정도로만 알고있으면 되겠다.
+
+아무튼 `auxv->type`이 AT_RANDOM인 `auxv->a_un.a_val`를 `_dl_random`에 대입하게 된다.
+
 
 
 `glibc/elf/dl-sysdep.c`
@@ -595,164 +567,35 @@ _dl_sysdep_start (void **start_argptr,
                   void (*dl_main) (const ElfW(Phdr) *phdr, ElfW(Word) phnum,
                                    ElfW(Addr) *user_entry, ElfW(auxv_t) *auxv))
 {
-  const ElfW(Phdr) *phdr = NULL;
-  ElfW(Word) phnum = 0;
-  ElfW(Addr) user_entry;
-  ElfW(auxv_t) *av;
-#ifdef HAVE_AUX_SECURE
-# define set_seen(tag) (tag)        /* Evaluate for the side effects.  */
-# define set_seen_secure() ((void) 0)
-#else
-  uid_t uid = 0;
-  gid_t gid = 0;
-  unsigned int seen = 0;
-# define set_seen_secure() (seen = -1)
-# ifdef HAVE_AUX_XID
-#  define set_seen(tag) (tag)        /* Evaluate for the side effects.  */
-# else
-#  define M(type) (1 << (type))
-#  define set_seen(tag) seen |= M ((tag)->a_type)
-# endif
-#endif
-#ifdef NEED_DL_SYSINFO
-  uintptr_t new_sysinfo = 0;
-#endif
-  __libc_stack_end = DL_STACK_END (start_argptr);
-  DL_FIND_ARG_COMPONENTS (start_argptr, _dl_argc, _dl_argv, _environ,
-                          GLRO(dl_auxv));
-  user_entry = (ElfW(Addr)) ENTRY_POINT;
-  GLRO(dl_platform) = NULL; /* Default to nothing known about the platform.  */
+  c
+  .
+  .
+  .
+  
   for (av = GLRO(dl_auxv); av->a_type != AT_NULL; set_seen (av++))
     switch (av->a_type)
       {
-      case AT_PHDR:
-        phdr = (void *) av->a_un.a_val;
-        break;
-      case AT_PHNUM:
-        phnum = av->a_un.a_val;
-        break;
-      case AT_PAGESZ:
-        GLRO(dl_pagesize) = av->a_un.a_val;
-        break;
-      case AT_ENTRY:
-        user_entry = av->a_un.a_val;
-        break;
-#ifdef NEED_DL_BASE_ADDR
-      case AT_BASE:
-        _dl_base_addr = av->a_un.a_val;
-        break;
-#endif
-#ifndef HAVE_AUX_SECURE
-      case AT_UID:
-      case AT_EUID:
-        uid ^= av->a_un.a_val;
-        break;
-      case AT_GID:
-      case AT_EGID:
-        gid ^= av->a_un.a_val;
-        break;
-#endif
-      case AT_SECURE:
-#ifndef HAVE_AUX_SECURE
-        seen = -1;
-#endif
-        __libc_enable_secure = av->a_un.a_val;
-        break;
-      case AT_PLATFORM:
-        GLRO(dl_platform) = (void *) av->a_un.a_val;
-        break;
-      case AT_HWCAP:
-        GLRO(dl_hwcap) = (unsigned long int) av->a_un.a_val;
-        break;
-      case AT_HWCAP2:
-        GLRO(dl_hwcap2) = (unsigned long int) av->a_un.a_val;
-        break;
-      case AT_CLKTCK:
-        GLRO(dl_clktck) = av->a_un.a_val;
-        break;
-      case AT_FPUCW:
-        GLRO(dl_fpu_control) = av->a_un.a_val;
-        break;
-#ifdef NEED_DL_SYSINFO
-      case AT_SYSINFO:
-        new_sysinfo = av->a_un.a_val;
-        break;
-#endif
-#ifdef NEED_DL_SYSINFO_DSO
-      case AT_SYSINFO_EHDR:
-        GLRO(dl_sysinfo_dso) = (void *) av->a_un.a_val;
-        break;
-#endif
+      .
+	  .
+	  .
+	  
       case AT_RANDOM:
         _dl_random = (void *) av->a_un.a_val;
         break;
-#ifdef DL_PLATFORM_AUXV
-      DL_PLATFORM_AUXV
-#endif
-      }
-#ifndef HAVE_AUX_SECURE
-  if (seen != -1)
-    {
-      /* Fill in the values we have not gotten from the kernel through the
-         auxiliary vector.  */
-# ifndef HAVE_AUX_XID
-#  define SEE(UID, var, uid) \
-   if ((seen & M (AT_##UID)) == 0) var ^= __get##uid ()
-      SEE (UID, uid, uid);
-      SEE (EUID, uid, euid);
-      SEE (GID, gid, gid);
-      SEE (EGID, gid, egid);
-# endif
-      /* If one of the two pairs of IDs does not match this is a setuid
-         or setgid run.  */
-      __libc_enable_secure = uid | gid;
-    }
-#endif
-#ifndef HAVE_AUX_PAGESIZE
-  if (GLRO(dl_pagesize) == 0)
-    GLRO(dl_pagesize) = __getpagesize ();
-#endif
-#ifdef NEED_DL_SYSINFO
-  if (new_sysinfo != 0)
-    {
-# ifdef NEED_DL_SYSINFO_DSO
-      /* Only set the sysinfo value if we also have the vsyscall DSO.  */
-      if (GLRO(dl_sysinfo_dso) != 0)
-# endif
-        GLRO(dl_sysinfo) = new_sysinfo;
-    }
-#endif
-  __tunables_init (_environ);
-#ifdef DL_SYSDEP_INIT
-  DL_SYSDEP_INIT;
-#endif
-#ifdef DL_PLATFORM_INIT
-  DL_PLATFORM_INIT;
-#endif
-  /* Determine the length of the platform name.  */
-  if (GLRO(dl_platform) != NULL)
-    GLRO(dl_platformlen) = strlen (GLRO(dl_platform));
-  if (__sbrk (0) == _end)
-    /* The dynamic linker was run as a program, and so the initial break
-       starts just after our bss, at &_end.  The malloc in dl-minimal.c
-       will consume the rest of this page, so tell the kernel to move the
-       break up that far.  When the user program examines its break, it
-       will see this new value and not clobber our data.  */
-    __sbrk (GLRO(dl_pagesize)
-            - ((_end - (char *) 0) & (GLRO(dl_pagesize) - 1)));
-  /* If this is a SUID program we make sure that FDs 0, 1, and 2 are
-     allocated.  If necessary we are doing it ourself.  If it is not
-     possible we stop the program.  */
-  if (__builtin_expect (__libc_enable_secure, 0))
-    __libc_check_standard_fds ();
-  (*dl_main) (phdr, phnum, &user_entry, GLRO(dl_auxv));
-  return user_entry;
+
+	.
+	.
+	.
+	
 }
 ```
 
+해당 내용도 `security_init`처럼 Dynamic-link와 관련이 있기 때문에 추후 포스팅 하도록 하겠다.
+
+여기서 동일하게 type이 AT_RANDOM이면 `_dl_random`에 값을 넣어주는 형식이다.
 
 
-### __dl_setup_pointer_guard
+## __dl_setup_pointer_guard
 
 ```c
 static inline uintptr_t __attribute__ ((always_inline))
@@ -777,6 +620,33 @@ _dl_setup_stack_chk_guard (void *dl_random)
   return ret.num;
 }
 ```
+
+`_dl_setup_stack_chk_guard`함수의 `ret` struct에서 union으로 8 byte 변수(64bit 기준)를 
+
+두개의 데이터타입으로 설정해주는 이유는
+
+`memcpy`를 사용할때는 `unsigned char`형식인 `ret.bytes`를 사용하여 `dl_random`의 값을 1 byte씩 복사하고
+
+`strcpy`와 같이 NULL 문자열을 받지 못하는 함수들에 의한 오버플로우 버그들에 대항하기 위해 첫 byte를 NULL로 설정할때,
+
+리턴값을 리턴 할때는 `ret.num`를 사용하여 `uintptr_t`형식을 이용하기 위해서이다.
+
+이렇게 kernel로부터 받은 `_dl_random`의 값으로 `__dl_setup_pointer_guard`를 실행하여 나온 값으로 
+
+main thread의 canary값을 설정하게 된다.
+
+
+# Discussion
+
+본 포스팅에 빠져있는 `ALLOCATE_STACK` 매크로와
+
+추후 포스팅 예정인 `ELF Auxiliary Vectors`, `TLS`&`TCB`, `Dynamic-Linker` 순으로 진행을 해보려고 한다.
+
+개인적으로 linux glibc와 kernel 코드를 분석할 날이 올줄은 알았지만 이렇게 갑자기 시작할줄은 예상하지 못했다.
+
+깊게 들어간 내용이 없었고 타 블로그에서 참고한 내용도 정말 많았기 때문에 제대로 분석한 내용은 없는 포스팅인것 같다.
+
+당분간 문제풀이보다 linux source code 분석에 시간을 투자해야겠다는 생각이 든다.
 
 # Referenece
 
