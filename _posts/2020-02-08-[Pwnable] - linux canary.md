@@ -290,7 +290,348 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 ## ALLOCATE_STACK (iattr, &pd) 
 
-추후에 포스팅예정
+포스팅 중...
+
+```c
+static int
+allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
+                ALLOCATE_STACK_PARMS)
+{
+  struct pthread *pd;
+  size_t size;
+  size_t pagesize_m1 = __getpagesize () - 1;
+  assert (powerof2 (pagesize_m1 + 1));
+  assert (TCB_ALIGNMENT >= STACK_ALIGN);
+  /* Get the stack size from the attribute if it is set.  Otherwise we
+     use the default we determined at start time.  */
+  if (attr->stacksize != 0)
+    size = attr->stacksize;
+  else
+    {
+      lll_lock (__default_pthread_attr_lock, LLL_PRIVATE);
+      size = __default_pthread_attr.stacksize;
+      lll_unlock (__default_pthread_attr_lock, LLL_PRIVATE);
+    }
+  /* Get memory for the stack.  */
+  if (__glibc_unlikely (attr->flags & ATTR_FLAG_STACKADDR))
+    {
+      uintptr_t adj;
+      char *stackaddr = (char *) attr->stackaddr;
+      /* Assume the same layout as the _STACK_GROWS_DOWN case, with struct
+         pthread at the top of the stack block.  Later we adjust the guard
+         location and stack address to match the _STACK_GROWS_UP case.  */
+      if (_STACK_GROWS_UP)
+        stackaddr += attr->stacksize;
+      /* If the user also specified the size of the stack make sure it
+         is large enough.  */
+      if (attr->stacksize != 0
+          && attr->stacksize < (__static_tls_size + MINIMAL_REST_STACK))
+        return EINVAL;
+      /* Adjust stack size for alignment of the TLS block.  */
+#if TLS_TCB_AT_TP
+      adj = ((uintptr_t) stackaddr - TLS_TCB_SIZE)
+            & __static_tls_align_m1;
+      assert (size > adj + TLS_TCB_SIZE);
+#elif TLS_DTV_AT_TP
+      adj = ((uintptr_t) stackaddr - __static_tls_size)
+            & __static_tls_align_m1;
+      assert (size > adj);
+#endif
+      /* The user provided some memory.  Let's hope it matches the
+         size...  We do not allocate guard pages if the user provided
+         the stack.  It is the user's responsibility to do this if it
+         is wanted.  */
+#if TLS_TCB_AT_TP
+      pd = (struct pthread *) ((uintptr_t) stackaddr
+                               - TLS_TCB_SIZE - adj);
+#elif TLS_DTV_AT_TP
+      pd = (struct pthread *) (((uintptr_t) stackaddr
+                                - __static_tls_size - adj)
+                               - TLS_PRE_TCB_SIZE);
+#endif
+      /* The user provided stack memory needs to be cleared.  */
+      memset (pd, '\0', sizeof (struct pthread));
+      /* The first TSD block is included in the TCB.  */
+      pd->specific[0] = pd->specific_1stblock;
+      /* Remember the stack-related values.  */
+      pd->stackblock = (char *) stackaddr - size;
+      pd->stackblock_size = size;
+      /* This is a user-provided stack.  It will not be queued in the
+         stack cache nor will the memory (except the TLS memory) be freed.  */
+      pd->user_stack = true;
+      /* This is at least the second thread.  */
+      pd->header.multiple_threads = 1;
+#ifndef TLS_MULTIPLE_THREADS_IN_TCB
+      __pthread_multiple_threads = *__libc_multiple_threads_ptr = 1;
+#endif
+#ifdef NEED_DL_SYSINFO
+      SETUP_THREAD_SYSINFO (pd);
+#endif
+      /* Don't allow setxid until cloned.  */
+      pd->setxid_futex = -1;
+      /* Allocate the DTV for this thread.  */
+      if (_dl_allocate_tls (TLS_TPADJ (pd)) == NULL)
+        {
+          /* Something went wrong.  */
+          assert (errno == ENOMEM);
+          return errno;
+        }
+      /* Prepare to modify global data.  */
+      lll_lock (stack_cache_lock, LLL_PRIVATE);
+      /* And add to the list of stacks in use.  */
+      list_add (&pd->list, &__stack_user);
+      lll_unlock (stack_cache_lock, LLL_PRIVATE);
+    }
+  else
+    {
+      /* Allocate some anonymous memory.  If possible use the cache.  */
+      size_t guardsize;
+      size_t reqsize;
+      void *mem;
+      const int prot = (PROT_READ | PROT_WRITE
+                        | ((GL(dl_stack_flags) & PF_X) ? PROT_EXEC : 0));
+      /* Adjust the stack size for alignment.  */
+      size &= ~__static_tls_align_m1;
+      assert (size != 0);
+      /* Make sure the size of the stack is enough for the guard and
+         eventually the thread descriptor.  */
+      guardsize = (attr->guardsize + pagesize_m1) & ~pagesize_m1;
+      if (guardsize < attr->guardsize || size + guardsize < guardsize)
+        /* Arithmetic overflow.  */
+        return EINVAL;
+      size += guardsize;
+      if (__builtin_expect (size < ((guardsize + __static_tls_size
+                                     + MINIMAL_REST_STACK + pagesize_m1)
+                                    & ~pagesize_m1),
+                            0))
+        /* The stack is too small (or the guard too large).  */
+        return EINVAL;
+      /* Try to get a stack from the cache.  */
+      reqsize = size;
+      pd = get_cached_stack (&size, &mem);
+      if (pd == NULL)
+        {
+          /* To avoid aliasing effects on a larger scale than pages we
+             adjust the allocated stack size if necessary.  This way
+             allocations directly following each other will not have
+             aliasing problems.  */
+#if MULTI_PAGE_ALIASING != 0
+          if ((size % MULTI_PAGE_ALIASING) == 0)
+            size += pagesize_m1 + 1;
+#endif
+          /* If a guard page is required, avoid committing memory by first
+             allocate with PROT_NONE and then reserve with required permission
+             excluding the guard page.  */
+          mem = __mmap (NULL, size, (guardsize == 0) ? prot : PROT_NONE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+          if (__glibc_unlikely (mem == MAP_FAILED))
+            return errno;
+          /* SIZE is guaranteed to be greater than zero.
+             So we can never get a null pointer back from mmap.  */
+          assert (mem != NULL);
+          /* Place the thread descriptor at the end of the stack.  */
+#if TLS_TCB_AT_TP
+          pd = (struct pthread *) ((((uintptr_t) mem + size)
+                                    - TLS_TCB_SIZE)
+                                   & ~__static_tls_align_m1);
+#elif TLS_DTV_AT_TP
+          pd = (struct pthread *) ((((uintptr_t) mem + size
+                                    - __static_tls_size)
+                                    & ~__static_tls_align_m1)
+                                   - TLS_PRE_TCB_SIZE);
+#endif
+          /* Now mprotect the required region excluding the guard area.  */
+          if (__glibc_likely (guardsize > 0))
+            {
+              char *guard = guard_position (mem, size, guardsize, pd,
+                                            pagesize_m1);
+              if (setup_stack_prot (mem, size, guard, guardsize, prot) != 0)
+                {
+                  __munmap (mem, size);
+                  return errno;
+                }
+            }
+          /* Remember the stack-related values.  */
+          pd->stackblock = mem;
+          pd->stackblock_size = size;
+          /* Update guardsize for newly allocated guardsize to avoid
+             an mprotect in guard resize below.  */
+          pd->guardsize = guardsize;
+          /* We allocated the first block thread-specific data array.
+             This address will not change for the lifetime of this
+             descriptor.  */
+          pd->specific[0] = pd->specific_1stblock;
+          /* This is at least the second thread.  */
+          pd->header.multiple_threads = 1;
+#ifndef TLS_MULTIPLE_THREADS_IN_TCB
+          __pthread_multiple_threads = *__libc_multiple_threads_ptr = 1;
+#endif
+#ifdef NEED_DL_SYSINFO
+          SETUP_THREAD_SYSINFO (pd);
+#endif
+          /* Don't allow setxid until cloned.  */
+          pd->setxid_futex = -1;
+          /* Allocate the DTV for this thread.  */
+          if (_dl_allocate_tls (TLS_TPADJ (pd)) == NULL)
+            {
+              /* Something went wrong.  */
+              assert (errno == ENOMEM);
+              /* Free the stack memory we just allocated.  */
+              (void) __munmap (mem, size);
+              return errno;
+            }
+          /* Prepare to modify global data.  */
+          lll_lock (stack_cache_lock, LLL_PRIVATE);
+          /* And add to the list of stacks in use.  */
+          stack_list_add (&pd->list, &stack_used);
+          lll_unlock (stack_cache_lock, LLL_PRIVATE);
+          /* There might have been a race.  Another thread might have
+             caused the stacks to get exec permission while this new
+             stack was prepared.  Detect if this was possible and
+             change the permission if necessary.  */
+          if (__builtin_expect ((GL(dl_stack_flags) & PF_X) != 0
+                                && (prot & PROT_EXEC) == 0, 0))
+            {
+              int err = change_stack_perm (pd
+#ifdef NEED_SEPARATE_REGISTER_STACK
+                                           , ~pagesize_m1
+#endif
+                                           );
+              if (err != 0)
+                {
+                  /* Free the stack memory we just allocated.  */
+                  (void) __munmap (mem, size);
+                  return err;
+                }
+            }
+          /* Note that all of the stack and the thread descriptor is
+             zeroed.  This means we do not have to initialize fields
+             with initial value zero.  This is specifically true for
+             the 'tid' field which is always set back to zero once the
+             stack is not used anymore and for the 'guardsize' field
+             which will be read next.  */
+        }
+      /* Create or resize the guard area if necessary.  */
+      if (__glibc_unlikely (guardsize > pd->guardsize))
+        {
+          char *guard = guard_position (mem, size, guardsize, pd,
+                                        pagesize_m1);
+          if (__mprotect (guard, guardsize, PROT_NONE) != 0)
+            {
+            mprot_error:
+              lll_lock (stack_cache_lock, LLL_PRIVATE);
+              /* Remove the thread from the list.  */
+              stack_list_del (&pd->list);
+              lll_unlock (stack_cache_lock, LLL_PRIVATE);
+              /* Get rid of the TLS block we allocated.  */
+              _dl_deallocate_tls (TLS_TPADJ (pd), false);
+              /* Free the stack memory regardless of whether the size
+                 of the cache is over the limit or not.  If this piece
+                 of memory caused problems we better do not use it
+                 anymore.  Uh, and we ignore possible errors.  There
+                 is nothing we could do.  */
+              (void) __munmap (mem, size);
+              return errno;
+            }
+          pd->guardsize = guardsize;
+        }
+      else if (__builtin_expect (pd->guardsize - guardsize > size - reqsize,
+                                 0))
+        {
+          /* The old guard area is too large.  */
+#ifdef NEED_SEPARATE_REGISTER_STACK
+          char *guard = mem + (((size - guardsize) / 2) & ~pagesize_m1);
+          char *oldguard = mem + (((size - pd->guardsize) / 2) & ~pagesize_m1);
+          if (oldguard < guard
+              && __mprotect (oldguard, guard - oldguard, prot) != 0)
+            goto mprot_error;
+          if (__mprotect (guard + guardsize,
+                        oldguard + pd->guardsize - guard - guardsize,
+                        prot) != 0)
+            goto mprot_error;
+#elif _STACK_GROWS_DOWN
+          if (__mprotect ((char *) mem + guardsize, pd->guardsize - guardsize,
+                        prot) != 0)
+            goto mprot_error;
+#elif _STACK_GROWS_UP
+         char *new_guard = (char *)(((uintptr_t) pd - guardsize)
+                                    & ~pagesize_m1);
+         char *old_guard = (char *)(((uintptr_t) pd - pd->guardsize)
+                                    & ~pagesize_m1);
+         /* The guard size difference might be > 0, but once rounded
+            to the nearest page the size difference might be zero.  */
+         if (new_guard > old_guard
+             && __mprotect (old_guard, new_guard - old_guard, prot) != 0)
+            goto mprot_error;
+#endif
+          pd->guardsize = guardsize;
+        }
+      /* The pthread_getattr_np() calls need to get passed the size
+         requested in the attribute, regardless of how large the
+         actually used guardsize is.  */
+      pd->reported_guardsize = guardsize;
+    }
+  /* Initialize the lock.  We have to do this unconditionally since the
+     stillborn thread could be canceled while the lock is taken.  */
+  pd->lock = LLL_LOCK_INITIALIZER;
+  /* The robust mutex lists also need to be initialized
+     unconditionally because the cleanup for the previous stack owner
+     might have happened in the kernel.  */
+  pd->robust_head.futex_offset = (offsetof (pthread_mutex_t, __data.__lock)
+                                  - offsetof (pthread_mutex_t,
+                                              __data.__list.__next));
+  pd->robust_head.list_op_pending = NULL;
+#if __PTHREAD_MUTEX_HAVE_PREV
+  pd->robust_prev = &pd->robust_head;
+#endif
+  pd->robust_head.list = &pd->robust_head;
+  /* We place the thread descriptor at the end of the stack.  */
+  *pdp = pd;
+#if _STACK_GROWS_DOWN
+  void *stacktop;
+# if TLS_TCB_AT_TP
+  /* The stack begins before the TCB and the static TLS block.  */
+  stacktop = ((char *) (pd + 1) - __static_tls_size);
+# elif TLS_DTV_AT_TP
+  stacktop = (char *) (pd - 1);
+# endif
+# ifdef NEED_SEPARATE_REGISTER_STACK
+  *stack = pd->stackblock;
+  *stacksize = stacktop - *stack;
+# else
+  *stack = stacktop;
+# endif
+#else
+  *stack = pd->stackblock;
+#endif
+  return 0;
+}
+```
+
+여기서 분석하고자 하는 내용은 `pthread_create` 함수에서 thread를 생성하고 스택을 할당할때
+
+내부적으로 어떻게 TLS, TCB 영역이 할당되고, 해당 공간을 thread가 사용하는지에 대한 내용이다.
+
+1. allocate_stack으로 넘어온 *attr 인자가 `if (__glibc_unlikely (attr->flags & ATTR_FLAG_STACKADDR))` 조건을 만족하지 못해서 attr->stackaddr를 사용하지 않고 mmap으로 할당을 받는다.
+
+2. mmap을 할당받으면 마지막 부분에 TLS_TCB_SIZE만큼 빼고 page 크기에 맞춰서 pd를 할당해준다.
+
+3. `guard_position`으로 `guard`를 리턴하고 해당 부분을 `setup_stack_prot`로 권한을 재할당 해준다.
+
+4. `(_dl_allocate_tls (TLS_TPADJ (pd))`를 호출해서 pd에 tls를 할당해준다.
+
+5. `stack_list_add (&pd->list, &stack_used)`로 stack_list에 추가한다. (get_cached_stack에서 사용하는 것으로 추정)
+
+6. allocate_stack 마지막에 `*stack`의 값을 갱신함. (*stack은 STACK_VARIABLES_ARGS 전역변수로 추정)
+
+7. pd의 구조체에 값을 설정 (stack_guard, header.self, 등)
+
+8. `create_thread (pd, iattr, &stopped_start, STACK_VARIABLES_ARGS, &thread_ran)`을 실행
+
+9. 6번, 8번에서 값을 확인해보면 pd는 mmap으로 할당된 공간의 최상위 부분, 그 뒤에 STACK_VARIABLES_ARGS값이 할당되는 것을 볼 수 있음.
+
+
+
 
 ## THREAD_COPY_STACK_GUARD (pd)
 
@@ -340,10 +681,12 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 `THREAD_COPY_STACK_GUARD (pd)`로 만들어지는 thread의 tcb구조체에 stack_guard를 세팅해주는 역할을 해준다.
 
-그래서 non main thread의 stack에서 buffer overflow가 발생하게 되면 library stack의 공간에 할당된 stack_guard의 값에 접근이 가능해진다. (non main thread가 library stack을 사용하기 때문에)
+그래서 non main thread의 stack에서 buffer overflow가 발생하게 되면 library stack의 공간에 할당된 
+
+stack_guard의 값에 접근이 가능해진다. (non main thread가 library stack을 사용하기 때문에)
 
 이를 통해 canary를 우회할 수 있는 가능성이 생기는 것이다.
-<br/>
+
 이렇게 non main thread에서 main thread의 canary를 복사해오는 과정을 살펴보았으니
 
 이번에는 main thread에서 어떻게 canary값을 초기화 해주는 지 살펴보도록 하겠다.
@@ -351,7 +694,9 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 # linux stack canary (main thread)
 
-소스코드 상에서 위에서 살펴보았던 `THREAD_COPY_STACK_GUARD` 매크로 바로 위에 `THREAD_SET_STACK_GUARD`라는 매크로가 존재하는 것을 볼 수 있었다.
+소스코드 상에서 위에서 살펴보았던 `THREAD_COPY_STACK_GUARD` 매크로 바로 위에 
+
+`THREAD_SET_STACK_GUARD`라는 매크로가 존재하는 것을 볼 수 있었다.
 
 ```c
 # define THREAD_SET_STACK_GUARD(value) \
@@ -482,7 +827,7 @@ LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
 link : `https://www.gnu.org/software/hurd/glibc/startup.html`
 
 
-```
+```c
 uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random)
 
 THREAD_SET_STACK_GUARD (stack_chk_guard)
@@ -638,15 +983,19 @@ main thread의 canary값을 설정하게 된다.
 
 # Discussion
 
-본 포스팅에 빠져있는 `ALLOCATE_STACK` 매크로와
+본 포스팅에 빠져있는 `ALLOCATE_STACK` 매크로와 추후 포스팅 예정인 
 
-추후 포스팅 예정인 `ELF Auxiliary Vectors`, `TLS`&`TCB`, `Dynamic-Linker` 순으로 진행을 해보려고 한다.
+`ELF Auxiliary Vectors`, `TLS`&`TCB`, `Dynamic-Linker` 순으로 포스팅을 진행을 해보려고 한다.
 
 개인적으로 linux glibc와 kernel 코드를 분석할 날이 올줄은 알았지만 이렇게 갑자기 시작할줄은 예상하지 못했다.
 
-깊게 들어간 내용이 없었고 타 블로그에서 참고한 내용도 정말 많았기 때문에 제대로 분석한 내용은 없는 포스팅인것 같다.
+당분간 문제풀이보다 linux source code 분석에 시간을 투자해 라이브러리나 커널 동작이
 
-당분간 문제풀이보다 linux source code 분석에 시간을 투자해야겠다는 생각이 든다.
+어떤 식으로 이루어지는지 공부해야겠다.
+
+틀린 내용이 있다면 kws981024.tistory.com에 댓글을 달아주시거나 kws981024@naver.com에 메일을 주시면
+
+정말정말 감사하겠습니다.. 댓글기능을 추가하기 전까지는 이렇게 연락 부탁드립니다!
 
 # Referenece
 
