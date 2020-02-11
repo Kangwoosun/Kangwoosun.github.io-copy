@@ -7,9 +7,9 @@ tags: pwn, canary, tls
 
 # Introduction
 
-codegate 2019의 aeiou 문제를 풀면서 canary, tcb, tls 등에 관심이 생겨서 분석을 진행해보려고 한다.
+codegate 2019의 aeiou 문제를 풀면서 `canary`, `tcb`, `tls` 등에 관심이 생겨서 분석을 진행해보려고 한다.
 
-glibc 2.29 버전의 소스코드를 정적분석, glibc 2.19 버전으로 동적분석을 진행했다.
+`glibc 2.29` 버전의 소스코드를 정적분석, `glibc 2.19`, `glibc 2.27` 버전으로 동적분석을 진행했다.
 
 (환경이 환경인지라 양해를 부탁드립니다..)
 
@@ -290,28 +290,15 @@ __pthread_create_2_1 (pthread_t *newthread, const pthread_attr_t *attr,
 
 ## ALLOCATE_STACK (iattr, &pd) 
 
-포스팅 중...
-
 ```c
 static int
 allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
                 ALLOCATE_STACK_PARMS)
 {
-  struct pthread *pd;
-  size_t size;
-  size_t pagesize_m1 = __getpagesize () - 1;
-  assert (powerof2 (pagesize_m1 + 1));
-  assert (TCB_ALIGNMENT >= STACK_ALIGN);
-  /* Get the stack size from the attribute if it is set.  Otherwise we
-     use the default we determined at start time.  */
-  if (attr->stacksize != 0)
-    size = attr->stacksize;
-  else
-    {
-      lll_lock (__default_pthread_attr_lock, LLL_PRIVATE);
-      size = __default_pthread_attr.stacksize;
-      lll_unlock (__default_pthread_attr_lock, LLL_PRIVATE);
-    }
+  .
+  .
+  .
+  
   /* Get memory for the stack.  */
   if (__glibc_unlikely (attr->flags & ATTR_FLAG_STACKADDR))
     {
@@ -320,27 +307,10 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
       /* Assume the same layout as the _STACK_GROWS_DOWN case, with struct
          pthread at the top of the stack block.  Later we adjust the guard
          location and stack address to match the _STACK_GROWS_UP case.  */
-      if (_STACK_GROWS_UP)
-        stackaddr += attr->stacksize;
-      /* If the user also specified the size of the stack make sure it
-         is large enough.  */
-      if (attr->stacksize != 0
-          && attr->stacksize < (__static_tls_size + MINIMAL_REST_STACK))
-        return EINVAL;
-      /* Adjust stack size for alignment of the TLS block.  */
-#if TLS_TCB_AT_TP
-      adj = ((uintptr_t) stackaddr - TLS_TCB_SIZE)
-            & __static_tls_align_m1;
-      assert (size > adj + TLS_TCB_SIZE);
-#elif TLS_DTV_AT_TP
-      adj = ((uintptr_t) stackaddr - __static_tls_size)
-            & __static_tls_align_m1;
-      assert (size > adj);
-#endif
-      /* The user provided some memory.  Let's hope it matches the
-         size...  We do not allocate guard pages if the user provided
-         the stack.  It is the user's responsibility to do this if it
-         is wanted.  */
+      .
+	  .
+	  .
+	  
 #if TLS_TCB_AT_TP
       pd = (struct pthread *) ((uintptr_t) stackaddr
                                - TLS_TCB_SIZE - adj);
@@ -348,27 +318,11 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
       pd = (struct pthread *) (((uintptr_t) stackaddr
                                 - __static_tls_size - adj)
                                - TLS_PRE_TCB_SIZE);
-#endif
-      /* The user provided stack memory needs to be cleared.  */
-      memset (pd, '\0', sizeof (struct pthread));
-      /* The first TSD block is included in the TCB.  */
-      pd->specific[0] = pd->specific_1stblock;
-      /* Remember the stack-related values.  */
-      pd->stackblock = (char *) stackaddr - size;
-      pd->stackblock_size = size;
-      /* This is a user-provided stack.  It will not be queued in the
-         stack cache nor will the memory (except the TLS memory) be freed.  */
-      pd->user_stack = true;
-      /* This is at least the second thread.  */
-      pd->header.multiple_threads = 1;
-#ifndef TLS_MULTIPLE_THREADS_IN_TCB
-      __pthread_multiple_threads = *__libc_multiple_threads_ptr = 1;
-#endif
-#ifdef NEED_DL_SYSINFO
-      SETUP_THREAD_SYSINFO (pd);
-#endif
-      /* Don't allow setxid until cloned.  */
-      pd->setxid_futex = -1;
+	  .
+	  .
+	  .
+	  
+
       /* Allocate the DTV for this thread.  */
       if (_dl_allocate_tls (TLS_TPADJ (pd)) == NULL)
         {
@@ -452,25 +406,11 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
                 }
             }
           /* Remember the stack-related values.  */
-          pd->stackblock = mem;
-          pd->stackblock_size = size;
-          /* Update guardsize for newly allocated guardsize to avoid
-             an mprotect in guard resize below.  */
-          pd->guardsize = guardsize;
-          /* We allocated the first block thread-specific data array.
-             This address will not change for the lifetime of this
-             descriptor.  */
-          pd->specific[0] = pd->specific_1stblock;
-          /* This is at least the second thread.  */
-          pd->header.multiple_threads = 1;
-#ifndef TLS_MULTIPLE_THREADS_IN_TCB
-          __pthread_multiple_threads = *__libc_multiple_threads_ptr = 1;
-#endif
-#ifdef NEED_DL_SYSINFO
-          SETUP_THREAD_SYSINFO (pd);
-#endif
-          /* Don't allow setxid until cloned.  */
-          pd->setxid_futex = -1;
+		  
+         .
+		 .
+		 .
+		 
           /* Allocate the DTV for this thread.  */
           if (_dl_allocate_tls (TLS_TPADJ (pd)) == NULL)
             {
@@ -518,20 +458,10 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
                                         pagesize_m1);
           if (__mprotect (guard, guardsize, PROT_NONE) != 0)
             {
-            mprot_error:
-              lll_lock (stack_cache_lock, LLL_PRIVATE);
-              /* Remove the thread from the list.  */
-              stack_list_del (&pd->list);
-              lll_unlock (stack_cache_lock, LLL_PRIVATE);
-              /* Get rid of the TLS block we allocated.  */
-              _dl_deallocate_tls (TLS_TPADJ (pd), false);
-              /* Free the stack memory regardless of whether the size
-                 of the cache is over the limit or not.  If this piece
-                 of memory caused problems we better do not use it
-                 anymore.  Uh, and we ignore possible errors.  There
-                 is nothing we could do.  */
-              (void) __munmap (mem, size);
-              return errno;
+           .
+		   .
+		   .
+		   
             }
           pd->guardsize = guardsize;
         }
@@ -566,25 +496,11 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
 #endif
           pd->guardsize = guardsize;
         }
-      /* The pthread_getattr_np() calls need to get passed the size
-         requested in the attribute, regardless of how large the
-         actually used guardsize is.  */
-      pd->reported_guardsize = guardsize;
-    }
-  /* Initialize the lock.  We have to do this unconditionally since the
-     stillborn thread could be canceled while the lock is taken.  */
-  pd->lock = LLL_LOCK_INITIALIZER;
-  /* The robust mutex lists also need to be initialized
-     unconditionally because the cleanup for the previous stack owner
-     might have happened in the kernel.  */
-  pd->robust_head.futex_offset = (offsetof (pthread_mutex_t, __data.__lock)
-                                  - offsetof (pthread_mutex_t,
-                                              __data.__list.__next));
-  pd->robust_head.list_op_pending = NULL;
-#if __PTHREAD_MUTEX_HAVE_PREV
-  pd->robust_prev = &pd->robust_head;
-#endif
-  pd->robust_head.list = &pd->robust_head;
+
+     .
+	 .
+	 .
+	 
   /* We place the thread descriptor at the end of the stack.  */
   *pdp = pd;
 #if _STACK_GROWS_DOWN
@@ -608,30 +524,49 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
 }
 ```
 
-여기서 분석하고자 하는 내용은 `pthread_create` 함수에서 thread를 생성하고 스택을 할당할때
+필자도 해당 함수의 모든 내용을 알지 못하기 때문에 `pthread_create` 함수에서 thread를 생성하고 스택을 할당할때
 
-내부적으로 어떻게 TLS, TCB 영역이 할당되고, 해당 공간을 thread가 사용하는지에 대한 내용이다.
+내부적으로 어떻게 TLS, TCB 영역이 할당되고, 해당 공간을 thread가 어떻게 할당받는지에 대한 내용만 분석할 예정이다.
 
-1. allocate_stack으로 넘어온 *attr 인자가 `if (__glibc_unlikely (attr->flags & ATTR_FLAG_STACKADDR))` 조건을 만족하지 못해서 attr->stackaddr를 사용하지 않고 mmap으로 할당을 받는다.
+1. `allocate_stack`으로 넘어온 `*attr` 인자가 `if (__glibc_unlikely (attr->flags & ATTR_FLAG_STACKADDR))` 조건을 만족하지 못해서 `attr->stackaddr`를 사용하지 않고 `__mmap`으로 할당을 받는다.
 
-2. mmap을 할당받으면 마지막 부분에 TLS_TCB_SIZE만큼 빼고 page 크기에 맞춰서 pd를 할당해준다.
+2. `__mmap`으로 할당받은 메모리 주소의 최상위 부분에서 sizeof(pthread)만큼 빼고 page 크기에 맞춘 후 pd에 할당해준다.
 
 3. `guard_position`으로 `guard`를 리턴하고 해당 부분을 `setup_stack_prot`로 권한을 재할당 해준다.
 
-4. `(_dl_allocate_tls (TLS_TPADJ (pd))`를 호출해서 pd에 tls를 할당해준다.
+4. `(_dl_allocate_tls (TLS_TPADJ (pd))`를 호출해서 pd->header.dtv를 할당해준다.
 
-5. `stack_list_add (&pd->list, &stack_used)`로 stack_list에 추가한다. (get_cached_stack에서 사용하는 것으로 추정)
+5. `stack_list_add (&pd->list, &stack_used)`로 stack_list에 추가한다. (`get_cached_stack`에서 사용하는 것으로 추정)
 
-6. allocate_stack 마지막에 `*stack`의 값을 갱신함. (*stack은 STACK_VARIABLES_ARGS 전역변수로 추정)
+6. `allocate_stack` 마지막에 `*stack`의 값을 갱신하고 리턴. (`*stack`은 `STACK_VARIABLES_ARGS` 전역변수로 추정)
 
-7. pd의 구조체에 값을 설정 (stack_guard, header.self, 등)
+7. `allocate_stack` 수행 후 pd의 구조체에 값을 설정 (header.tcb, header.self, 등)
 
-8. `create_thread (pd, iattr, &stopped_start, STACK_VARIABLES_ARGS, &thread_ran)`을 실행
+8. `pthread_create`에서 `create_thread (pd, iattr, &stopped_start, STACK_VARIABLES_ARGS, &thread_ran)`을 실행
 
 9. 6번, 8번에서 값을 확인해보면 pd는 mmap으로 할당된 공간의 최상위 부분, 그 뒤에 STACK_VARIABLES_ARGS값이 할당되는 것을 볼 수 있음.
 
 
+대략 이런식으로 생성되는 thread의 stack의 공간이 할당되고, 해당 thread의 tcb를 세팅해준다.
 
+결과적으로 thread의 스택으로 사용되는 공간과 thread의 tcb구조체로 사용되는 공간은 `__mmap`으로 인접한 공간에 할당받게 된다.
+
+또한 내부적으로 tcb구조체가 `__mmap`으로 할당받은 메모리 공간의 최상위에 할당받기 때문에 non main thread에서 stack overflow가
+
+일어나게 되면 상대적으로 메모리 상위에 위치한 tcb구조체를 침범하게 되고 stack_guard를 덮어쓸 수 있게 되는 것이었다.
+
+### `allocate_stack`을 분석하다가 생긴 의문점
+
+1. `pthread_create`에서 `ALLOCATE_STACK`를 호출할때 인자로 iattr 넣는다. iattr에는 `__default_pthread_attr`을 대입하게 된다. 대입하기 전 `__default_pthread_attr`의 값이 정해지는 곳은 어디인가?
+
+2. `get_cached_stack`의 내부 동작이 어떻게 이루어지는가?
+
+3. `__mmap` 이후에 나오는 `guard` 변수의 용도와 stack의 권한을 재설정해주는 이유 및 일련과정
+
+4. `allocate_stack`함수 마지막의 `*stack`와 전역변수 `STACK_VARIABLES_ARGS`, `STACK_VARIABLES_PARMS`의 관계
+
+
+이제 non main thread에서 canary를 어디서 가져오는지 살펴보도록 하겠다.
 
 ## THREAD_COPY_STACK_GUARD (pd)
 
@@ -675,21 +610,13 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
 
 `THREAD_GETMEM`는 descr->member의 size에 따라 비트를 체크해서 해당 비트 (ex, 64bit)에 맞게 fs:offset에 값을 넣어주고 있다.
 
-`THREAD_COPY_STACK_GUARD`는 pd->geader.stack_guard = THREAD_SELF->header.stack_guard 동작을 수행하게 되는것이다.
+`THREAD_COPY_STACK_GUARD`는 pd->geader.stack_guard = THREAD_SELF->header.stack_guard 동작을 수행한다.
 
-따라서 pthread_created에서 `ALLOCATE_STACK (iattr, &pd)`로 library stack 공간에 pd 구조체의 공간을 제공해주고
+위의 과정을 보면 non main thread에서 stack_guard는 main thread의 canary를 복사해온다.
 
-`THREAD_COPY_STACK_GUARD (pd)`로 만들어지는 thread의 tcb구조체에 stack_guard를 세팅해주는 역할을 해준다.
+원본은 main thread에 있다는 말이 된다.
 
-그래서 non main thread의 stack에서 buffer overflow가 발생하게 되면 library stack의 공간에 할당된 
-
-stack_guard의 값에 접근이 가능해진다. (non main thread가 library stack을 사용하기 때문에)
-
-이를 통해 canary를 우회할 수 있는 가능성이 생기는 것이다.
-
-이렇게 non main thread에서 main thread의 canary를 복사해오는 과정을 살펴보았으니
-
-이번에는 main thread에서 어떻게 canary값을 초기화 해주는 지 살펴보도록 하겠다.
+그렇다면 이번에는 main thread에서 canary을 어떻게 초기화 해주는지 살펴보도록 하겠다.
 
 
 # linux stack canary (main thread)
@@ -703,7 +630,7 @@ stack_guard의 값에 접근이 가능해진다. (non main thread가 library sta
     THREAD_SETMEM (THREAD_SELF, header.stack_guard, value)
 ```
 
-매크로 내용은 단순하다. 현재 thread의 stack_guad를 value로 설정해주는 동작을 한다.
+매크로 내용은 단순하다. 현재 thread의 stack_guard를 value로 설정해주는 동작을 한다.
 
 해당 매크로가 어디서 쓰이는지 알아내면 어디서 처음 canary를 설정해주는지 알 수 있을 것이다.
 
