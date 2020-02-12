@@ -5,7 +5,13 @@ categories:
 tags: pwn, auxv, kernel
 ---
 
-`posting...`
+이전 포스팅 `https://kangwoosun.github.io/pwnable/2020/02/08/Pwnable-linux-canary/`에서 
+
+canary를 생성할때 사용되었던 `_dl_random`의 값을 정해줄때 사용되었던
+
+`av->a_un.a_val`, `av->a_type`, `av`에 대해 분석해보는 시간을 가지려고 한다.
+
+해당 코드에서 사용된 
 
 ```c
 static int
