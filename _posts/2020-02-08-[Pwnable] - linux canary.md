@@ -551,7 +551,7 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
 
 결과적으로 thread의 스택으로 사용되는 공간과 thread의 tcb구조체로 사용되는 공간은 `__mmap`으로 인접한 공간에 할당받게 된다.
 
-또한 내부적으로 tcb구조체가 `__mmap`으로 할당받은 메모리 공간의 최상위에 할당받기 때문에 non main thread에서 stack overflow가
+또한 내부적으로 tcb구조체가 `__mmap`으로 할당받은 메모리 공간의 최상위에 할당받기 때문에 thread에서 stack overflow가
 
 일어나게 되면 상대적으로 메모리 상위에 위치한 tcb구조체를 침범하게 되고 stack_guard를 덮어쓸 수 있게 되는 것이었다.
 
@@ -616,7 +616,7 @@ allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,
 
 원본은 main thread에 있다는 말이 된다.
 
-그렇다면 이번에는 main thread에서 canary을 어떻게 초기화 해주는지 살펴보도록 하겠다.
+그렇다면 main thread에서 원본 canary를 생성하는지 살펴보도록 하겠다.
 
 
 # linux stack canary (main thread)
