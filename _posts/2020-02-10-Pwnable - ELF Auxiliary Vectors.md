@@ -11,7 +11,7 @@ canary를 생성할때 사용되었던 `_dl_random`의 값을 정해줄때 사�
 
 `av->a_un.a_val`, `av->a_type`, `av`에 대해 분석해보는 시간을 가지려고 한다.
 
-해당 코드에서 사용된 
+해당 코드에서 사용된 `AT_RANDOM`이라는 type에 어떤 값이 들어가는지에 대해 알아보자.
 
 ```c
 static int
@@ -93,4 +93,12 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 
 `NEW_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes)`를 호출하여
 
-auv
+aux의 각 타입마다 값을 넣어주고 있다.
+
+매크로 `NEW_AUX_ENT`는 elf_info 주소를 늘리면서 type과 value를 인자로 받아 설정해준다.
+
+`AT_RANDOM`의 값으로 들어가는 `u_rand_bytes`는 `get_random_bytes`로 값을 받은 `k_rand_bytes`를 
+
+대입하게 되고 `u_rand_bytes`는 `unsigned long`의 size만큼만 전달하게된다. (32bit는 4바이트, 64bit는 8바이트)
+
+포스팅중..(20.02.14)
