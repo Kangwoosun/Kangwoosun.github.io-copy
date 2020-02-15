@@ -101,4 +101,18 @@ aux의 각 타입마다 값을 넣어주고 있다.
 
 대입하게 되고 `u_rand_bytes`는 `unsigned long`의 size만큼만 전달하게된다. (32bit는 4바이트, 64bit는 8바이트)
 
+이렇게 만들어진 auxv들은 `argc``argv[0]`...`argv[n](NULL)``envp[0]`...`envp[m](NULL)``auxv[]`...
+
+형태로 메모리상 `envp`의 뒷부분에 존재한다. `NEW_AUX_ENT`에서 16byte로 8byte는 id, 8byte val를 넣기 때문에
+
+구조상 {key:value}의 형식으로 존재하게 된다.
+
+
+# Reference
+
+```
+https://umbum.tistory.com/439
+```
+
+
 포스팅중..(20.02.14)
