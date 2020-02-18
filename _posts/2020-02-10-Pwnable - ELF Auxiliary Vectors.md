@@ -160,6 +160,7 @@ void main(int argc, char* argv[], char* envp[])
 }
 
 ```
+```
 +-----------------------+
 |          argv         |
 +-----------------------+
@@ -191,7 +192,7 @@ void main(int argc, char* argv[], char* envp[])
 +-----------------------+
 |           .           |
 +-----------------------+
-
+```
 
 이렇게 만들어진 auxv들은 `argc``argv[0]`...`argv[n](NULL)``envp[0]`...`envp[m](NULL)``auxv[]`...
 
