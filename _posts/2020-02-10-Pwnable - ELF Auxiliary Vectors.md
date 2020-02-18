@@ -11,6 +11,8 @@ canary를 생성할때 사용되었던 `_dl_random`의 값을 정해줄때 사�
 
 `av->a_un.a_val`, `av->a_type`, `av`에 대해 분석해보는 시간을 가지려고 한다.
 
+(본 포스팅의 내용은 `https://nekoplu5.tistory.com/206`에서 많이 참조함.)
+
 해당 코드에서 사용된 `AT_RANDOM`이라는 type에 어떤 값이 들어가는지에 대해 알아보자.
 
 ```c
@@ -101,18 +103,109 @@ aux의 각 타입마다 값을 넣어주고 있다.
 
 대입하게 되고 `u_rand_bytes`는 `unsigned long`의 size만큼만 전달하게된다. (32bit는 4바이트, 64bit는 8바이트)
 
+정리하면
+
+1. `get_get_random_bytes`로 무작위 16byte `k_rand_bytes` 생성
+2. `STACK_ALLOC`으로 `u_rand_bytes` 공간 할당 후 `k_rand_bytes`의 값을 복사
+3. `NEW_AUX_ENT`를 사용해 `AT_RANDOM` type에 `u_rand_bytes`의 value 입력
+
+이렇게 `AT_RANDOM` type의 value가 정해진다.
+
+`AT_RANDOM`의 값이 어떻게 설정되는지 살펴보았으니 이번에는 auxv값이 binary에 어떤 형태로 들어가는지
+
+테스트 코드를 통해 확인해보도록 하겠다.
+
+(여기서부터는 `http://articles.manugarg.com/aboutelfauxiliaryvectors.html`, `https://umbum.tistory.com/439`을 참조했다.)
+
+```c
+/* 32bit */
+/* gcc ./test.c -o ./test -m32 */
+
+#include <stdio.h>
+#include <elf.h>
+
+main(int argc, char* argv[], char* envp[])
+{
+        Elf32_auxv_t *auxv;
+        while(*envp++ != NULL); /*from stack diagram above: *envp = NULL marks end of envp*/
+
+        for (auxv = (Elf32_auxv_t *)envp; auxv->a_type != AT_NULL; auxv++)
+      /* auxv->a_type = AT_NULL marks the end of auxv */
+        {
+                if( auxv->a_type == AT_SYSINFO)
+                        printf("AT_SYSINFO is: 0x%x\n", auxv->a_un.a_val);
+        }
+}
+
+
+
+/* 64bit */
+/* gcc ./test.c -o ./test */
+#include <stdio.h>
+#include <elf.h>
+
+void main(int argc, char* argv[], char* envp[])
+{
+        Elf64_auxv_t *auxv;
+	
+        while(*envp++ != NULL); /*from stack diagram above: *envp = NULL marks end of envp*/
+    
+	for (auxv = (Elf64_auxv_t *)envp; auxv->a_type != AT_NULL; auxv++)
+      /* auxv->a_type = AT_NULL marks the end of auxv */
+        {
+                if( auxv->a_type == AT_RANDOM)
+                        printf("AT_RANDOM is: 0x%p\n", auxv->a_un.a_val);
+				
+        }
+}
+
+```
++-----------------------+
+|          argv         |
++-----------------------+
+|         argv[0]       |
++-----------------------+
+|           .           |
++-----------------------+
+|           .           |
++-----------------------+
+|         argv[n]       |
++-----------------------+
+|         envp[0]       |
++-----------------------+
+|           .           |
++-----------------------+
+|           .           |
++-----------------------+
+|         envp[m]       |
++-----------------------+
+|          auxv         |
++-----------------------+
+|    type   |   value   |
++-----------------------+
+|    type   |   value   |
++-----------------------+
+|           .           |
++-----------------------+
+|           .           |
++-----------------------+
+|           .           |
++-----------------------+
+
+
 이렇게 만들어진 auxv들은 `argc``argv[0]`...`argv[n](NULL)``envp[0]`...`envp[m](NULL)``auxv[]`...
 
 형태로 메모리상 `envp`의 뒷부분에 존재한다. `NEW_AUX_ENT`에서 16byte로 8byte는 id, 8byte val를 넣기 때문에
 
-구조상 {key:value}의 형식으로 존재하게 된다.
+구조상 {type:value}의 형식으로 존재하게 된다.
 
 
 # Reference
 
 ```
 https://umbum.tistory.com/439
+https://nekoplu5.tistory.com/206
 ```
 
 
-포스팅중..(20.02.14)
+포스팅중..(20.02.18)
