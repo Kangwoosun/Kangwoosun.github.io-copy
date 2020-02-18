@@ -5,6 +5,8 @@ categories:
 tags: pwn, auxv, kernel
 ---
 
+# Introduction
+
 이전 포스팅 `https://kangwoosun.github.io/pwnable/2020/02/08/Pwnable-linux-canary/`에서 
 
 canary를 생성할때 사용되었던 `_dl_random`의 값을 정해줄때 사용되었던
@@ -14,6 +16,8 @@ canary를 생성할때 사용되었던 `_dl_random`의 값을 정해줄때 사�
 (본 포스팅의 내용은 `https://nekoplu5.tistory.com/206`에서 많이 참조함.)
 
 해당 코드에서 사용된 `AT_RANDOM`이라는 type에 어떤 값이 들어가는지에 대해 알아보자.
+
+# AT_RANDOM
 
 ```c
 static int
@@ -117,6 +121,8 @@ aux의 각 타입마다 값을 넣어주고 있다.
 
 (여기서부터는 `http://articles.manugarg.com/aboutelfauxiliaryvectors.html`, `https://umbum.tistory.com/439`을 참조했다.)
 
+# Example of testing auxiliary vector
+
 ```c
 /* 32bit */
 /* gcc ./test.c -o ./test -m32 */
@@ -155,11 +161,15 @@ void main(int argc, char* argv[], char* envp[])
         {
                 if( auxv->a_type == AT_RANDOM)
                         printf("AT_RANDOM is: 0x%p\n", auxv->a_un.a_val);
-				
         }
 }
 
 ```
+
+테스트 코드를 보면 알겠지만 `auxv`의 시작 주소를 `envp` == NULL 부분으로 설정해주는 것을 볼 수 있다.
+
+디버깅을 해보면 다음과 같은 형태가 나오는데
+
 ```
 +-----------------------+
 |          argv         |
@@ -194,18 +204,22 @@ void main(int argc, char* argv[], char* envp[])
 +-----------------------+
 ```
 
-이렇게 만들어진 auxv들은 `argc``argv[0]`...`argv[n](NULL)``envp[0]`...`envp[m](NULL)``auxv[]`...
+이렇게 만들어진 `auxv`들은 `argc``argv[0]`...`argv[n](NULL)``envp[0]`...`envp[m](NULL)``auxv[]`...
 
-형태로 메모리상 `envp`의 뒷부분에 존재한다. `NEW_AUX_ENT`에서 16byte로 8byte는 id, 8byte val를 넣기 때문에
+형태로 메모리상 `envp`의 뒷부분에 {type:value}의 형식으로 존재하게 된다.
 
-구조상 {type:value}의 형식으로 존재하게 된다.
+추가적으로 바이너리를 실행할때 넘어가는 `auxv`의 값을 알고싶으면 터미널에 `LD_SHOW_AUXV=1 ./binary`를 입력해주면 된다.
 
+# Discussion
+
+참고한 블로그에서 말한것처럼 `get_random_bytes` 분석진행 하면서 커널도 한번 분석해보는 시간을 가져야겠다.
 
 # Reference
 
 ```
 https://umbum.tistory.com/439
 https://nekoplu5.tistory.com/206
+http://articles.manugarg.com/aboutelfauxiliaryvectors.html
 ```
 
 
