@@ -907,6 +907,17 @@ _dl_setup_stack_chk_guard (void *dl_random)
 
 main thread의 canary값을 설정하게 된다.
 
++++ '20.02.19 +++
+
+![](http://ww1.sinaimg.cn/mw690/81b78497jw1emfgwkasznj21hc0u0qb7.jpg)
+
+`_dl_random`에 들어가는 값은 포인터이기 때문에 해당 주소의 값에 앞부분이 null byte로
+
+치환된 값이 최종적으로 canary 값으로 사용이 된다. 추가적으로 사용된 `_dl_random`은 leak과 같은
+
+위험을 방지하기 위해 0으로 만들어준다.
+
+
 
 # Discussion
 
@@ -920,9 +931,9 @@ main thread의 canary값을 설정하게 된다.
 
 어떤 식으로 이루어지는지 공부해야겠다.
 
-틀린 내용이 있다면 kws981024.tistory.com에 댓글을 달아주시거나 kws981024@naver.com에 메일을 주시면
+틀린 내용이나 의문점이 있다면 kws981024.tistory.com에 댓글을 달아주시거나 
 
-정말정말 감사하겠습니다.. 댓글기능을 추가하기 전까지는 이렇게 연락 부탁드립니다!
+kws981024@naver.com에 메일을 주시면정말 감사하겠습니다.
 
 # Referenece
 
