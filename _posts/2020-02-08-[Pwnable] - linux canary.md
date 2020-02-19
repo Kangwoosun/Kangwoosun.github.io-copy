@@ -909,7 +909,7 @@ main thread의 canary값을 설정하게 된다.
 
 +++ '20.02.19 +++
 
-![](http://ww1.sinaimg.cn/mw690/81b78497jw1emfgwkasznj21hc0u0qb7.jpg)
+![](https://github.com/Kangwoosun/Kangwoosun.github.io/blob/master/about/linux_canary_1.PNG)
 
 `_dl_random`에 들어가는 값은 포인터이기 때문에 해당 주소의 값에 앞부분이 null byte로
 
