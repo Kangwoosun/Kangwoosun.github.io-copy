@@ -1,8 +1,8 @@
 ---
 title: Pwnable - linux canary
 categories:
- - pwnable
-tags: pwn, canary, tls
+ - pwnable, analysis
+tags: pwn, canary, tls, tcb, auxv
 ---
 
 # Introduction
