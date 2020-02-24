@@ -43,21 +43,21 @@ tags: pwn, kernel, exploit, page, Copy-on-Write
 
 
 ```c
-f=open(argv[1],O_RDONLY);
-fstat(f,&st);
-name=argv[1];
-/*
-You have to use MAP_PRIVATE for copy-on-write mapping.
-> Create a private copy-on-write mapping.  Updates to the
-> mapping are not visible to other processes mapping the same
-> file, and are not carried through to the underlying file.  It
-> is unspecified whether changes made to the file after the
-> mmap() call are visible in the mapped region.
-*/
-/*
-You have to open with PROT_READ.
-*/
-map=mmap(NULL,st.st_size,PROT_READ,MAP_PRIVATE,f,0);
+	f=open(argv[1],O_RDONLY);
+	fstat(f,&st);
+	name=argv[1];
+	/*
+	You have to use MAP_PRIVATE for copy-on-write mapping.
+	> Create a private copy-on-write mapping.  Updates to the
+	> mapping are not visible to other processes mapping the same
+	> file, and are not carried through to the underlying file.  It
+	> is unspecified whether changes made to the file after the
+	> mmap() call are visible in the mapped region.
+	*/
+	/*
+	You have to open with PROT_READ.
+	*/
+	map=mmap(NULL,st.st_size,PROT_READ,MAP_PRIVATE,f,0);
 ```
 
 `mmap`을 호출하면 해당 프로세스의 가상 주소 공간에 매핑된 파일 기반 읽기 전용 메모리를 생성한다. 이렇게 생성된 메모리는 `vm_area_struct`(Virutal Memory Area)라 불리는 커널 객체에 의해 관리된다. (해당 커널 객체에는 매핑을 지원하는 기본 파일 설명, 매핑된 페이지에 대한 읽기/쓰기 권한 등의 정보들이 들어있음)
