@@ -156,6 +156,103 @@ void *procselfmemThread(void *arg)
 
 ## `write` on `/proc/{pid}/mem`
 
+`/proc/{pid}/mem`은 프로세스에 일종의 out-of-band 메모리 접근을 제공하는 `pseudo file`(가상 파일)이다. 이런 유형의  접근 방식의 또 다른 예로 `ptrace`가 있다. `ptrace`는 Dirty Cow의 대체 공격 벡터로 사용가능하다.
+
+`/proc/self/mem`에 write를 했을 때 동작을 살펴보기 위해 커널 영역에 땅굴이 필요하다. 먼저 `write` 함수가 이 가상파일(`/proc/self/mem`)에 어떻게 구현되어 있는지 확인해보자.
+
+커널영역에서는 파일 시스템 동작이 OOP style로 구현되어 있다. 추상 인터페이스 `struct file_operations`가 한개 존재하고 다른 파일 형식들은 해당 인터페이스에 대해 세부적인 파일 작업 구현을 제공할 수 있다. `/proc/{pid}/mem`의 경우, `/fs/proc/base.c`에서 정의된 것을 찾을 수 있었다.
+
+```c
+static const struct file_operations proc_mem_operations = {
+    .llseek  = mem_lseek,
+    .read    = mem_read,
+    .write   = mem_write,
+    .open    = mem_open,
+    .release = mem_release,
+};
+```
+
+가상 파일에 `write`를 호출할 때 커널은 해당 작업을 `mem_write`로 라우팅시킨다. `mem_write`는 대부분의 작업을 수행하는 `mem_rw`을 래핑하는 역할을 한다. (실질적인 수행은 `mem_rw`에서 함.)
+
+```c
+static ssize_t mem_rw(struct file *file, char __user *buf, size_t count, loff_t *ppos, int write)
+{
+    struct mm_struct *mm = file->private_data;
+    unsigned long addr = *ppos;
+    ssize_t copied;
+    char *page;
+
+    if (!mm)
+        return 0;
+
+    /* allocate an exchange buffer */
+    page = (char *)__get_free_page(GFP_TEMPORARY);
+    if (!page)
+        return -ENOMEM;
+
+    copied = 0;
+    if (!atomic_inc_not_zero(&mm->mm_users))
+        goto free;
+
+    while (count > 0) {
+        int this_len = min_t(int, count, PAGE_SIZE);
+
+        /* copy user content to the exchange buffer */
+        if (write && copy_from_user(page, buf, this_len)) {
+            copied = -EFAULT;
+            break;
+        }
+
+        this_len = access_remote_vm(mm, addr, page, this_len, write);
+        if (!this_len) {
+            if (!copied)
+                copied = -EIO;
+            break;
+        }
+
+        if (!write && copy_to_user(buf, page, this_len)) {
+            copied = -EFAULT;
+            break;
+        }
+
+        buf += this_len;
+        addr += this_len;
+        copied += this_len;
+        count -= this_len;
+    }
+    *ppos = addr;
+
+    mmput(mm);
+free:
+    free_page((unsigned long) page);
+    return copied;
+}
+```
+
+함수의 시작부분에서 호출 프로세스(write를 수행하는 프로세스)와 호출되는 프로세스(`/proc/self/mem`이 쓰여진 프로세스)의 사이에서 일종의 데이터 교환 센터로써 쓰이는 임시 메모리 버퍼를 할당한다. 이 경우에는 두 프로세스가 같은 프로세스이지만 일반적으로 호출 프로세스와 호출되는 프로세스가 서로 다르고, 다른 프로세스에 직접 접근할 수 없는 경우에는 앞의 동작이 무척 중요하다.
+
+그 다음에 `copy_from_user`를 사용하여 호출 프로세스의 유저 버퍼(`buf`)를 새로 할당된 `page` 버퍼에 복사한다.
+
+이러한 준비가 완료되면 `write`의 동작인 `access_remote_vm`이 수행된다. 이름에서 알 수 있듯이 `access_remote_vm`는 커널이 다른(원격) 프로세스의 가상 메모리 주소를 읽거나 쓰는 것을 허용해준다. 이는 out-of-band 메모리 접근 방식에 기초를 두고 있다. (예를 들면 `ptrace`, `/proc/self/mem`, `process_vm_readv`, `process_vm_writev`, 등.)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
