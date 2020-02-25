@@ -11,13 +11,16 @@ tags: pwn, kernel, exploit, page, Copy-on-Write
 
 원래는 휴가를 나가려고 해서 좀 쉬고 힐링 타임을 가지려고 했지만... ~~코로나 개색...~~
 
-약 4년전에 나온 kernel CVE, `Dirty Cow`에 대해 알아보도록 하겠다.
+약 4년전에 나온 kernel cve `Dirty Cow`에 대해 알아보도록 하겠다.
 
 본 분석글은 TLS를 분석할때 참고했던 `https://chao-tic.github.io/blog/2017/05/24/dirty-cow`의 게시글중에 `Dirty Cow`에 대해 정말 잘 정리되어 있는 글을 발견해서 번역 해서 포스팅하는 방향으로 진행하도록 하겠다.
 
-영어실력이 딸리기 때문에 필자의 해석이 많이 들어갈 수 있으니 이 글을 읽고 원문 또한 읽는 것을 무척.. 추천한다.
+시간이 없거나 한글이 편한 분들은 이 글을 읽는 것을 추천한다.   ~~영어 잘하면 이 글 읽지말고 원문만 보는 걸 추천합니다~~
 
-~~이 글 읽지말고 원문만 보는것도 추천합니다~~
+영어실력이 딸리기 때문에 필자의 오역이 많이 들어갈 수 있으니 양해의 말을 미리 구한다.
+
+
+
 
 ---
 
@@ -233,10 +236,87 @@ free:
 
 그 다음에 `copy_from_user`를 사용하여 호출 프로세스의 유저 버퍼(`buf`)를 새로 할당된 `page` 버퍼에 복사한다.
 
-이러한 준비가 완료되면 `write`의 동작인 `access_remote_vm`이 수행된다. 이름에서 알 수 있듯이 `access_remote_vm`는 커널이 다른(원격) 프로세스의 가상 메모리 주소를 읽거나 쓰는 것을 허용해준다. 이는 out-of-band 메모리 접근 방식에 기초를 두고 있다. (예를 들면 `ptrace`, `/proc/self/mem`, `process_vm_readv`, `process_vm_writev`, 등.)
+이러한 준비가 완료되면 `write`의 동작인 `access_remote_vm`이 수행된다. 이름에서 알 수 있듯이 `access_remote_vm`는 커널이 다른(원격) 프로세스의 가상 메모리 주소를 읽거나 쓰는 것을 허용해준다. 이는 out-of-band 메모리 접근 방식에 기초를 두고 있다. (e.g. `ptrace`, `/proc/self/mem`, `process_vm_readv`, `process_vm_writev`, 등.)
+
+`access_remote_vm`는 최종적으로 `__get_user_pages_locked(...)`에 도달하게 되는 몇개의 중간 함수를 호출한다. 해당 함수들은 먼저 out-of-band 접근의 의도를 `flags` 형식으로 변환시킨다. 이 경우에 `flags`들은 
+
+- FOLL_TOUCH
+- FOLL_REMOTE
+- FOLL_GET
+- FOLL_WRITE
+- FOLL_FORCE
+
+로 구성되어 있다.
+
+위의 flag들은 `gup_flags` (Get User Pages flags)나 `foll_flags` (Follow flags)라고도 불리며 해당 flag는 호출자가 왜 유저 메모리 페이지에 접근하는지 그리고 어떤 방식으로 접근을 원하는지, 어떻게 가져 가려는지에 대한 정보를 인코딩한다. 이제부터 이걸 `access semantics`(접근 의미론)이라고 부르도록 하겠다.
+
+이 `flags`와 다른 매개변수들이 `__get_user_pages`함수에 넘어가면서 실제 원격 프로세스 메모리 접근을 시작 한다.
+
+## `__get_user_pages` and `faultin_page`
+
+`__get_user_pages`의 목적은 주어진 가상 주소 범위(원격 프로세스의 주소 공간)를 찾아 커널영역에 고정시키는 것이다. 고정을 시키지 않으면, 해당 유저 페이지가 메모리 안에서 존재할 수 없게 된다.
+
+어떤 식으로든 `__get_user_pages`는  커널영역에서 사용자 공간의 메모리 접근을 하는 것을 시뮬레이션하고 `faultin_page`를 이용해 page fault 처리를 완료한다.
+
+관련없는 부분은 없앤 `__get_user_pages` 코드다.
+
+```c
+long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
+		unsigned long start, unsigned long nr_pages,
+		unsigned int gup_flags, struct page **pages,
+		struct vm_area_struct **vmas, int *nonblocking)
+{
+	/* ... snip ... */
+
+	do {
+        /* ... snip ... */
+retry:
+		cond_resched(); /* please rescheule me!!! */
+		page = follow_page_mask(vma, start, foll_flags, &page_mask);
+		if (!page) {
+			int ret;
+			ret = faultin_page(tsk, vma, start, &foll_flags,
+					nonblocking);
+			switch (ret) {
+			case 0:
+				goto retry;
+			case -EFAULT:
+			case -ENOMEM:
+			case -EHWPOISON:
+				return i ? i : ret;
+			case -EBUSY:
+				return i;
+			case -ENOENT:
+				goto next_page;
+			}
+			BUG();
+		} 
+		if (pages) {
+			pages[i] = page;
+			flush_anon_page(vma, page, start);
+			flush_dcache_page(page);
+			page_mask = 0;
+		}
+        /* ... snip ... */
+    }
+	/* ... snip ... */
+}
+```
+
+
+코드를 보면 먼저 `start`주소에서 메모리 접근 의미론(access semantics)가 인코딩된 `foll_flags`를 이용해 원격 프로세스의 메모리 페이지를 탐색한다. 만약 페이지를 사용할 수 없으면(`page == NULL`) 페이지가 존재하지 않거나 접근을 위해 page fault를 처리해야 될수도 있다고 가정한다. Thus faultin_page is called against the start address with the foll_flags, simulating a user memory access and trigger the page fault handler in the hope that the handler would “page” in the missing page. 그러면 `faultin_page`가 `start`주소와 함께 `foll_flags`를 이용해 호출된다. 유저 메모리 접근과 page fault 처리기가 ...
+
+posting..
 
 
 
+
+
+## Reference
+
+```
+https://chao-tic.github.io/blog/2017/05/24/dirty-cow
+```
 
 
 
