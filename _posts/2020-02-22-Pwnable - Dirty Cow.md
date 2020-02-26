@@ -155,7 +155,7 @@ void *procselfmemThread(void *arg)
 }
 ```
 
-먼저 `lseek`으로 `map`의 주소를 세팅한다. 그리고 아마 읽기 전용일 파일의 메모리 매핑에 속한 메모리 영역을 직접 수정을 하기 위해 `wirte`를 호출한다..?? 그리고나선 어떻게 해서든 그 수정된 것이 읽기 권한밖에 없는 파일에 전달되겠지..? 진심... 어떻게..??
+먼저 `lseek`으로 `map`의 주소를 세팅한다. 그리고 아마 읽기 전용일 파일의 메모리 매핑에 속한 메모리 영역을 직접 수정을 하기 위해 `wirte`를 호출한다..?? 그리고나선 아무튼 뭐 그 수정된 것이 읽기 권한밖에 없는 파일에 전달되겠지?? 대체.. 어떻게??
 
 ## `write` on `/proc/{pid}/mem`
 
@@ -232,7 +232,7 @@ free:
 }
 ```
 
-함수의 시작부분에서 호출 프로세스(write를 수행하는 프로세스)와 호출되는 프로세스(`/proc/self/mem`이 쓰여진 프로세스)의 사이에서 일종의 데이터 교환 센터로써 쓰이는 임시 메모리 버퍼를 할당한다. 이 경우에는 두 프로세스가 같은 프로세스이지만 일반적으로 호출 프로세스와 호출되는 프로세스가 서로 다르고, 다른 프로세스에 직접 접근할 수 없는 경우에는 앞의 동작이 무척 중요하다.
+함수의 시작부분에서 호출 프로세스(write를 수행하는 프로세스)와 호출되는 프로세스(`/proc/self/mem`이 쓰여진 프로세스)의 사이에서 일종의 데이터 교환 센터로써 쓰이는 임시 메모리 버퍼를 할당한다. 이 경우에는 두 프로세스가 같은 프로세스이지만 일반적으로 호출 프로세스와 호출되는 프로세스가 서로 다르고, 다른 프로세스에 직접 접근할 수 없는 경우에는 앞의 동작이 무척 중요하다. => 해석 다시해보기
 
 그 다음에 `copy_from_user`를 사용하여 호출 프로세스의 유저 버퍼(`buf`)를 새로 할당된 `page` 버퍼에 복사한다.
 
@@ -304,7 +304,96 @@ retry:
 ```
 
 
-코드를 보면 먼저 `start`주소에서 메모리 접근 의미론(access semantics)가 인코딩된 `foll_flags`를 이용해 원격 프로세스의 메모리 페이지를 탐색한다. 만약 페이지를 사용할 수 없으면(`page == NULL`) 페이지가 존재하지 않거나 접근을 위해 page fault를 처리해야 될수도 있다고 가정한다. Thus faultin_page is called against the start address with the foll_flags, simulating a user memory access and trigger the page fault handler in the hope that the handler would “page” in the missing page. 그러면 `faultin_page`가 `start`주소와 함께 `foll_flags`를 이용해 호출된다. 유저 메모리 접근과 page fault 처리기가 ...
+코드를 보면 먼저 `start`주소에서 메모리 접근 의미론(access semantics)가 인코딩된 `foll_flags`를 이용해 원격 프로세스의 메모리 페이지를 탐색한다. 만약 페이지를 사용할 수 없으면(`page == NULL`) 페이지가 존재하지 않거나 접근을 위해 page fault를 처리해야 될수도 있다고 가정한다. 따라서 `faultin_page`가 `start`주소와 함께 `foll_flags`를 이용해 호출되며, 유저 메모리 접근을 시뮬레이션 하고 핸들러가 누락된 페이지를 페이징 시키기 위해 page fault 핸들러를 트리거한다.
+
+`follow_page_mask`가 `NULL`을 리턴하는 몇 가지 이유가 있는데, 완전하진 않은 리스트를 소개하겠다.
+
+- `NULL` 포인터 접근과 같이 해당 주소에 메모리 매핑이 없는 경우
+- 메모리 매핑이 생성되었지만 `demand-paging` 때문에 아직 내용이 로드되지 않은 경우
+- 페이지가 기존 파일이나 대체 파일로 paged out 된 경우
+- `foll_flags`에 인코딩된 접근 의미론(access semantics)이 페이지의 사용 권한을 위반했을 경우(i.e. 읽기전용 매핑에 쓰기를 요청하기)
+
+여기서 맨 마지막 경우가 `/proc/self/mem`에 `write`를 할 때 발생하는 경우와 완전히 일치한다.
+
+만약 page fault 핸들러가 해당 fault를 성공적으로 해결하고 아무런 문제도 제기하지 않는다면 해당 기능은 유효한 페이지를 가지고 작업하기를 바라면서 또 다른 재시도를 할 것이다. => 뭔소리야..
+
+`retry` 레이블과 `goto` 구문의 사용을 확인해보고 넘어가라. 해당 구문은 exploit에 중대한 역할을 한다.
+
+그걸 염두해두고, `faultin_page`를 좀 더 가까이 살펴보자.
+
+```c
+static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
+		unsigned long address, unsigned int *flags, int *nonblocking)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	unsigned int fault_flags = 0;
+	int ret;
+
+	/* mlock all present pages, but do not fault in new pages */
+	if ((*flags & (FOLL_POPULATE | FOLL_MLOCK)) == FOLL_MLOCK)
+		return -ENOENT;
+	/* For mm_populate(), just skip the stack guard page. */
+	if ((*flags & FOLL_POPULATE) &&
+			(stack_guard_page_start(vma, address) ||
+			 stack_guard_page_end(vma, address + PAGE_SIZE)))
+		return -ENOENT;
+	if (*flags & FOLL_WRITE)
+		fault_flags |= FAULT_FLAG_WRITE;
+	if (*flags & FOLL_REMOTE)
+		fault_flags |= FAULT_FLAG_REMOTE;
+	if (nonblocking)
+		fault_flags |= FAULT_FLAG_ALLOW_RETRY;
+	if (*flags & FOLL_NOWAIT)
+		fault_flags |= FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_RETRY_NOWAIT;
+	if (*flags & FOLL_TRIED) {
+		VM_WARN_ON_ONCE(fault_flags & FAULT_FLAG_ALLOW_RETRY);
+		fault_flags |= FAULT_FLAG_TRIED;
+	}
+
+	ret = handle_mm_fault(mm, vma, address, fault_flags);
+	if (ret & VM_FAULT_ERROR) {
+		if (ret & VM_FAULT_OOM)
+			return -ENOMEM;
+		if (ret & (VM_FAULT_HWPOISON | VM_FAULT_HWPOISON_LARGE))
+			return *flags & FOLL_HWPOISON ? -EHWPOISON : -EFAULT;
+		if (ret & (VM_FAULT_SIGBUS | VM_FAULT_SIGSEGV))
+			return -EFAULT;
+		BUG();
+	}
+
+	if (tsk) {
+		if (ret & VM_FAULT_MAJOR)
+			tsk->maj_flt++;
+		else
+			tsk->min_flt++;
+	}
+
+	if (ret & VM_FAULT_RETRY) {
+		if (nonblocking)
+			*nonblocking = 0;
+		return -EBUSY;
+	}
+
+	/*
+	 * The VM_FAULT_WRITE bit tells us that do_wp_page has broken COW when
+	 * necessary, even if maybe_mkwrite decided not to set pte_write. We
+	 * can thus safely do subsequent page lookups as if they were reads.
+	 * But only do so when looping for pte_write is futile: in some cases
+	 * userspace may also be wanting to write to the gotten user page,
+	 * which a read fault here might prevent (a readonly page might get
+	 * reCOWed by userspace write).
+	 */
+	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE))
+		*flags &= ~FOLL_WRITE;
+	return 0;
+}
+```
+
+함수의 전반부는 `foll_flags`를 page fault 핸들러 `handle_mm_fault`가 이해할 수 있는 `fault_flags`로 변환한다. `handle_mm_fault`는 `__get_user_pages`가 계속 실행할 수 있게 page fault를 책임지고 해결한다.
+
+이 경우에는 우리가 수정하려는 원본 메모리 매핑 부분이 읽기전용이기 때문에 `handle_mm_fault`는  
+
+
 
 posting..
 
