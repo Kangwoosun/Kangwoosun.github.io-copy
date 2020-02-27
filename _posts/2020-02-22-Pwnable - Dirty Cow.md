@@ -157,7 +157,7 @@ void *procselfmemThread(void *arg)
 
 먼저 `lseek`으로 `map`의 주소를 세팅한다. 그리고 아마 읽기 전용일 파일의 메모리 매핑에 속한 메모리 영역을 직접 수정을 하기 위해 `wirte`를 호출한다..?? 그리고나선 아무튼 뭐 그 수정된 것이 읽기 권한밖에 없는 파일에 전달되겠지?? 대체.. 어떻게??
 
-## `write` on `/proc/{pid}/mem`
+## write on /proc/{pid}/mem
 
 `/proc/{pid}/mem`은 프로세스에 일종의 out-of-band 메모리 접근을 제공하는 `pseudo file`(가상 파일)이다. 이런 유형의  접근 방식의 또 다른 예로 `ptrace`가 있다. `ptrace`는 Dirty Cow의 대체 공격 벡터로 사용가능하다.
 
@@ -232,7 +232,7 @@ free:
 }
 ```
 
-함수의 시작부분에서 호출 프로세스(write를 수행하는 프로세스)와 호출되는 프로세스(`/proc/self/mem`이 쓰여진 프로세스)의 사이에서 일종의 데이터 교환 센터로써 쓰이는 임시 메모리 버퍼를 할당한다. 이 경우에는 두 프로세스가 같은 프로세스이지만 일반적으로 호출 프로세스와 호출되는 프로세스가 서로 다르고, 다른 프로세스에 직접 접근할 수 없는 경우에는 앞의 동작이 무척 중요하다. => 해석 다시해보기
+함수의 시작부분에서 호출 프로세스(write를 수행하는 프로세스)와 호출되는 프로세스(`/proc/self/mem`이 쓰여진 프로세스)의 사이에서 일종의 데이터 교환 센터로써 쓰이는 임시 메모리 버퍼를 할당한다. 이 경우에는 두 프로세스가 같은 프로세스이지만 일반적으로 호출 프로세스와 호출되는 프로세스가 서로 다르고, 다른 프로세스에 직접 접근할 수 없는 경우에는 임시 메모리 버퍼를 할당하는 동작이 무척 중요하다.
 
 그 다음에 `copy_from_user`를 사용하여 호출 프로세스의 유저 버퍼(`buf`)를 새로 할당된 `page` 버퍼에 복사한다.
 
@@ -252,7 +252,7 @@ free:
 
 이 `flags`와 다른 매개변수들이 `__get_user_pages`함수에 넘어가면서 실제 원격 프로세스 메모리 접근을 시작 한다.
 
-## `__get_user_pages` and `faultin_page`
+## __get_user_pages and faultin_page
 
 `__get_user_pages`의 목적은 주어진 가상 주소 범위(원격 프로세스의 주소 공간)를 찾아 커널영역에 고정시키는 것이다. 고정을 시키지 않으면, 해당 유저 페이지가 메모리 안에서 존재할 수 없게 된다.
 
@@ -391,7 +391,50 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 
 함수의 전반부는 `foll_flags`를 page fault 핸들러 `handle_mm_fault`가 이해할 수 있는 `fault_flags`로 변환한다. `handle_mm_fault`는 `__get_user_pages`가 계속 실행할 수 있게 page fault를 책임지고 해결한다.
 
-이 경우에는 우리가 수정하려는 원본 메모리 매핑 부분이 읽기전용이기 때문에 `handle_mm_fault`는  
+이 경우에는 우리가 수정하려는 원본 메모리 매핑 부분이 읽기전용이기 때문에 `handle_mm_fault`는 원본의 권한 구성을 준수하고 우리가 쓰고자 하는 주소에 대한 새로운 읽기 전용 COW 페이지(`do_wp_page`)를 만든다. 이 때 페이지는 private으로 마치 자기꺼라고 침발라 놓는 느낌으로 표시를 해주기 때문에 Dirty Cow로 불린다.
+
+COW된 페이지를 생성하는 실제 코드는 핸들러 깊숙히 내장된 `do_wp_page`이지만, 대략적인 코드 흐름은 공식 Dirty Cow page에서 찾아볼 수 있다.(`https://github.com/dirtycow/dirtycow.github.io/wiki/VulnerabilityDetails`)
+
+```
+faultin_page
+  handle_mm_fault
+    __handle_mm_fault
+      handle_pte_fault
+        FAULT_FLAG_WRITE && !pte_write
+      do_wp_page
+        PageAnon() <- this is CoWed page already
+        reuse_swap_page <- page is exclusively ours
+        wp_page_reuse
+          maybe_mkwrite <- dirty but RO again
+          ret = VM_FAULT_WRITE
+```
+
+이제 다시 `faultin_page`의 끝부분으로 돌아가 보면, 함수가 리턴되기 바로 전에 실제로 exploit을 가능하게하는 동작을 한다.
+
+```c
+	/*
+	 * The VM_FAULT_WRITE bit tells us that do_wp_page has broken COW when
+	 * necessary, even if maybe_mkwrite decided not to set pte_write. We
+	 * can thus safely do subsequent page lookups as if they were reads.
+	 * But only do so when looping for pte_write is futile: in some cases
+	 * userspace may also be wanting to write to the gotten user page,
+	 * which a read fault here might prevent (a readonly page might get
+	 * reCOWed by userspace write).
+	 */
+	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE))
+		*flags &= ~FOLL_WRITE;
+    return 0;
+```
+
+Copy on Write가 발생한 것(`ret & VM_FAULT_WRITE == true`)을 감지하고 나서 `foll_flags`에서 `FOLL_WRITE`를 제거하기로 결정한다. 띠용? 왜...?
+
+혹시 `retry` 레이블을 기억하는가? 만약 `FOLL_WRITE`가 제거되지 않으면 그 다음 재시도 또한 정확히 똑같은 코드 루트를 따라가게 될것이다. 그 이유는 새롭게 생겨난 COW된 페이지가 원본 페이지와 동일한 접근 권한(읽기전용)을 가지고 있기 때문이다. 동일한 접근 권한, 동일한 `foll_flags`, 동일한 재시도... 이 때문에 루프를 돌게 된다.
+
+무한 재시도의 띠를 탈출하려면, 
+
+
+
+
 
 
 
