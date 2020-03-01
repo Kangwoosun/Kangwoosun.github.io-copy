@@ -448,13 +448,76 @@ Copy on Write가 발생한 것(`ret & VM_FAULT_WRITE == true`)을 감지하고 �
 
 이렇게 된 이유는 커널이 거짓말을 해서 그렇다.~~구라치다 걸리면..~~ Dirty Cow 페이지가 준비되고난 이후 재시도를 할때 `follow_page_mask`와 `handle_mm_fault`한테 읽기 전용 액세스만 필요하다고 말했다. 이 두 함수는 기쁘게 응하고 작업에 제일 적합한 페이지를 반환한다. 이경우에 수정을 수행하면 원본 특권 파일에도 똑같이 수정이 되는 페이지를 반환하게 된다.
 
-`page`를 손에 넣은 후 `__get_user_pages`는 마침내 `faultin_page` 호출을 건너뛰고 
+`page`를 손에 넣은 후 `__get_user_pages`는 마침내 `faultin_page` 호출을 건너뛰고 이후 추가처리를 위한 `__access_remote_vm`에 사용될 `page`를 반환한다. 
+
 
 ## The massacre
 
+그럼 `page`가 정확히 어떻게 수정되겠는가? 여기 관련된 `access_remote_vm`의 코드 단편이 있다.
 
+```c
+    maddr = kmap(page);
+    if (write) {
+        copy_to_user_page(vma, page, addr,
+                  maddr + offset, buf, bytes);
+        set_page_dirty_lock(page);
+    } else {
+        /* ... snip ... */
+    }
+    kunmap(page);
+```
 
+위의 코드 단편의 `page`는 전에 우리가 언급했던 직접 매핑된 페이지이다. 먼저 커널은 `kmap`으로 커널 자신의 주소공간에 해당 페이지를 가져온다. 그 후 즉시 `copy_to_user_page`를 호출함으로써 `buf`에 있는 사용자 데이터를 언급한 페이지에 `write`를 한다.
 
+결국 얼마 지나서 오염된 페이지는 kernel write-back daemon(`kflushd`, `bdflush`, `kupdated`, `pdflush` threads...)나 명시적으로 `sync`나 `fsync`를 호출함으로써 디스크에 존재하는 특권 파일에 다시 쓰기를 하게된다. 그렇게 되면 이제 공격이 완성된다.
+
+이런 의문이 들 수도 있겠다. 얼마나 해당 exploit의 범용성이 클까? 이게 커널 공간에서 일어나고 있는 거지? 그리고 커널이 쓰레드가 언제 실행될지 결정할 권리가 있을까?
+
+안타깝게도 너도 대강 추측은 하고 있을 것이다. 답은 범용성은 꽤 크다. Dirty Cow는 `__get_user_pages`가 명시적으로 각 재시도마다 `cond_resched`을 호출함으로써 작업관리자에게 필요한 경우 다른 쓰레드로 전환하도록 요청하고 있기 때문에 싱글 코어 프로세서에서도 상당히 안정적으로 트리거될 수 있다.
+
+두 쓰레드가 어떻게 race 경쟁을 하는 지 보자.
+
+```
++-----------------------------------------------------------------+
+|        madvise Thread         |     /proc/self/mem Thread       |
++-----------------------------------------------------------------+
+|                               |                                 |
+|                               |      write("/proc/self/mem")    |
+|                               |                ↓                |
+|                               |        mem_rm(write=true)       |
+|                               |                ↓                |
+|                               |        access_remote_vm()       |
+|                               |                ↓                |
+|                               |        __get_user_pages()       |
+|                               |                ↓                |
+|                               |           faultin_page          |
+|                               |                ↓                |
+|                               |         Drops FOLL_WRITE        |
+|                               |                ↓                |
+|                               |           cond_resched()        |
+|                               |                                 |
++- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+
+|                               |                                 |
+|     madvice(MADV_DONTNEED)    |                                 |
+|               ↓               |                                 |
+|       zap_page_range(...)     |                                 |
+|               ↓               |                                 |
+|      Drops Dirty COWed page   |                                 |
+|                               |                                 |
++- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+
+|                               |                                 |
+|                               |       Begins another retry      |
+|                               |                ↓                |
+|                               | follow_page_mask(no FOLL_WRITE) |
+|                               |                ↓                |
+|                               |   Get page directly mapped to   |
+|                               |        the priviliged file      |
+|                               |                                 |
++-----------------------------------------------------------------+
+
+```
+
+## Hang on, but why do we have that dirty COW page in the first place again?
 
 
 
