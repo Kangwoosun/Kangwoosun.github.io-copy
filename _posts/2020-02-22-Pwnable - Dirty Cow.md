@@ -519,7 +519,34 @@ Copy on Write가 발생한 것(`ret & VM_FAULT_WRITE == true`)을 감지하고 �
 
 ## Hang on, but why do we have that dirty COW page in the first place again?
 
+눈치빠른 독자라면 눈치챘겠지만 우리가 읽기전용 파일 기반 매핑에 직접적으로 액세스를 했다면 우리 얼굴에 세그먼트 오류가 던져졌을 것이다. 하지만 왜 우리가 `/proc/self/mem`에 `write`를 하게되면 dirty COW된 페이지를 얻을 수 있을까?
 
+그 이유는 in-process direct 메모리/포인터 액세스와 `ptrace`나 `/proc/{pid}/mem`을 사용한 out-of-band 메모리 액세스 할때 커널이 page fault를 어떻게 처리하냐에 있다.
+
+두 경우 모두 최종적으로 page fault를 해결하기 위해 `handle_mm_fault`를 호출한다. 하지만 `faultin_page`를 사용하여 page fault를 시뮬레이션하는 후자와는 다르게 직접 액세스로 발생되는 page fault는 MMU에 의해 트리거되고 interrupt 핸들러를 거쳐 플랫폼 종속 커널 함수인 `__do_page_fault`까지 전달된다.
+
+읽기 전용 메모리 영역에 직접 write하는 경우에는 해당 핸들러가 `access_error`에서 액세스 위반을 감지하고 `handle_mm_fault`에 도달하기 전에 `bad_area_access_error`안에서 주저없이 `SIGSEGV`를 뿌려버린다.
+
+```c
+static noinline void
+__do_page_fault(struct pt_regs *regs, unsigned long error_code,
+        unsigned long address)
+{
+    /* ... snip ... */
+
+    if (unlikely(access_error(error_code, vma))) {
+        /* Let's skip handle_mm_fault, here comes SIGSEGV!!! */
+        bad_area_access_error(regs, error_code, address, vma);
+        return;
+    }
+
+    /* I'm here... */
+    fault = handle_mm_fault(mm, vma, address, flags);
+
+    /* ... snip ... */
+```
+
+반면에 `faultin_page`
 
 
 
