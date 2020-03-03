@@ -556,7 +556,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 픽스는 꽤 짧았다. 이하 전체적으로 달라진 내용이다.
 
-{gist 3d11e77ecd66ddd1c4f6b84595d8b89c %}
+{% gist 3d11e77ecd66ddd1c4f6b84595d8b89c %}
 
 posting..
 
