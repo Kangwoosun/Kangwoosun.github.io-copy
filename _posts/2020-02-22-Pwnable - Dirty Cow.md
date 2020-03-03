@@ -558,10 +558,27 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 {% gist 3d11e77ecd66ddd1c4f6b84595d8b89c %}
 
-posting..
+패치는 접근 의미론(access semantics)를 위한 새로운 flag `FOLL_COW`를 도입했다. `VM_FAULT_WRITE` 페이지 오류 이후 `FOLL_WRITE`를 간단하게 없애는 것 대신에 쓰기 의미론(write semantics)은 그대로 유지하게 되었다. 하지만 여전히 무한 재시도 탈출을 허용하기 위해서 새로운 flag는 다음 재시도 시에는 dirty COW된 페이지를 마주칠 수 있다는 예상을 내포하게 된다. 만약 예상 COW된 페이지가 없으면 원본을 다시 제출하는 대신 새 페이지를 만든다.
 
+해당 픽스는 다음 재시도 라운드에서 COW된 페이지에 대한 기대치를 적절히 유지한다. 반면에 이전 버전은 단순히 쓰기 의미론(write semantics)를 없애버리고 다음 재시도 시에 COW된 페이지가 여전히 있기를 희망한다.
 
+## Conclusion
 
+이 포스팅을 진행하면서 dirty cow에 대한 이해도가 많이 늘었다. 내부적으로 어떻게 진행되고 어떤 race condition 문제로 exploit이 진행됬는지 알아갈 수 있던 시간이었다. 
+
+독해능력도 조금이나마 향상된것 같고 대충 알고 있던 부분들이 제대로 번역을 진행하면서 글 내용에 대한 확실한 이해가 됐다.
+
+원문 번역도 할만한것같다. ~~7일 날림..~~
+
+## Etc
+
+이제 최신 커널 CVE 보면서 공부하고 CTF 문제 풀면서 감도 다시 찾아야겠다.
+
+할게 정말 많은 것 같다... CTF, 커널 CVE 공부, window heap exploit, C++17, linux & window kernel 등등..
+
+여기 적은 거라도 올해 안에 제대로 공부해보자!!  
+
+p.s. 애지간하면 원문 보세요 그냥..   ~~ 옆에 있는 신승민 websec level 19 풀면서 겁나 찡찡댐 ~~
 
 
 ## Reference
