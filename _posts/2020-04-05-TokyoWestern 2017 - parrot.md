@@ -7,7 +7,7 @@ tags: tokyowestern, pwn, fsop, off_by_null
 
 ## Introduction
 
-정말 우물 안 개구리라는 것을 느끼개 해준 문제이다. 최신동향 조금이나마 따라가고 있다고 생각했었는데 ㅋㅋㅋ 컷~ 2017년 문제부터 풀고와~ ㅋㅋㅋ
+정말 우물 안 개구리라는 것을 느끼개 해준 문제이다. 최신동향 조금이나마 따라가고 있다고 생각했었는데 ㅋㅋ.. 어림없지 컷! 2017년 문제부터 풀고와~ ㅋㅋㅋ
 
 개인적으로 너무 답도 없다고 느껴서 WriteUp을 참고했다.
 
@@ -16,7 +16,7 @@ tags: tokyowestern, pwn, fsop, off_by_null
 ## Vunlnerability
 
 
-```
+```c++
 CANARY    : disabled
 FORTIFY   : disabled
 NX        : ENABLED
@@ -24,7 +24,7 @@ PIE       : ENABLED
 RELRO     : FULL
 ```
 
-```
+```c++
 main(0xa20)
 
 	setvbuf(stdin, 0, 2, 0) call 0x8c0
@@ -64,23 +64,41 @@ parrot 바이너리의 `main`에서 `malloc`을 호출하고 에러검사를 하
 
 ## Exploit
 
-exploit은 
+`exploit`은 
 
-1. glibc_leak (malloc_consolidate)
-2. one_byte_null to _IO_buf_base
+1. Glibc_leak (malloc_consolidate)
+2. One_byte_null to _IO_buf_base
 3. __underflow -> _IO_new_file_underflow -> _IO_switch_to_get_mode -> _IO_SYSREAD
-4. stdin's member overwrite
+4. Stdin's member overwrite
 5. _IO_read_ptr sync with _IO_read_end via getchar()
-6. when _IO_read_ptr == _IO_read_ptr, recall __underflow
-7. overwrite malloc_hook to onegadget by call _IO_SYSREAD
+6. When _IO_read_ptr == _IO_read_ptr, recall __underflow
+7. Overwrite malloc_hook by call _IO_SYSREAD
 
 이 순서대로 진행된다.
 
 exploit 환경은 glibc-2.23이 아닌 glibc-2.19임을 상기해주길 바란다.
 
-### Glibc leak
-posting...
+### Libc leak
 
+일반적인 방법으로 `small bin`, `large bin`에 해당하는 chunk를 할당하게 되면 free를 하는 순간 top chunk와 병합이 되버리게 된다. 이 때문에 `fast bin`에 해당하는 적절한 크기를 할당받은 후에 `malloc_consolidate`를 호출하게끔 하여 `fast bin`에 해당하는 chunk들을 병합시켜 `unsorted bin`에 넣어지게 되면 library 주소를 leak 할 수 있게 된다.
+
+`malloc_consolidate`가 호출되는 조건은 
+
+`malloc`에서는
+
+1. 처음 malloc이 실행되는 경우
+2. large bin에 해당하는 chunk가 할당되는 경우
+3. large bin, fast bin에 해당하지 않는 chunk가 할당될 때 small bin에 chunk가 없을 경우
+
+`free`에서는
+
+1. 해제되는 chunk의 size가 fast bin에 해당하지 않고 ...(더알아봐야 됨)
+
+정도가 있다. 이것 말고도 조건이 추가적으로 있을 수도 있으니 `malloc_consolidate` 조건을 찾아보려면 `https://tribal1012.tistory.com/141`에서 찾아보는 것을 추천한다.
+
+아무튼 이런 조건 중에서 `free`를 이용해 `malloc_consolidate`를 호출시켜 문제를 풀었다.
+
+malloc(0x10) > malloc(0x70) > malloc(0x80) > malloc(0x10)
 
 
 ### Off_by_null to _IO_buf_base
@@ -188,3 +206,15 @@ if __name__ == '__main__':
 
 
 ## 느낀 점
+
+
+
+
+## Reference
+
+```
+https://tribal1012.tistory.com/141
+https://chp747.tistory.com/251
+```
+
+
