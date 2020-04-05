@@ -79,6 +79,7 @@ exploit은
 exploit 환경은 glibc-2.23이 아닌 glibc-2.19임을 상기해주길 바란다.
 
 ### Glibc leak
+posting...
 
 
 
