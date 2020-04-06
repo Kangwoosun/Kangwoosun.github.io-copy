@@ -86,13 +86,13 @@ exploit 환경은 glibc-2.23이 아닌 glibc-2.19임을 상기해주길 바란�
 
 `malloc`에서는
 
-1. 처음 malloc이 실행되는 경우
-2. large bin에 해당하는 chunk가 할당되는 경우
-3. large bin, fast bin에 해당하지 않는 chunk가 할당될 때 small bin에 chunk가 없을 경우
+- 처음 malloc이 실행되는 경우
+- large bin에 해당하는 chunk가 할당되는 경우
+- large bin, fast bin에 해당하지 않는 chunk가 할당될 때 small bin에 chunk가 없을 경우
 
 `free`에서는
 
-1. 해제되는 chunk의 size가 fast bin에 해당하지 않고 ...(더알아봐야 됨)
+- 해제되는 chunk의 size가 fast bin에 해당하지 않고 ...(더알아봐야 됨)
 
 정도가 있다. 이것 말고도 조건이 추가적으로 있을 수도 있으니 `malloc_consolidate` 조건을 찾아보려면 `https://tribal1012.tistory.com/141`에서 찾아보는 것을 추천한다.
 
@@ -205,6 +205,35 @@ libc_hidden_def (_IO_file_read)
 ### Sync _IO_read_ptr with _IO_read_ptr by getchar()
 
 추가 포스팅중... (getchar(), scnaf error, read error, write error, free_malloc_consolidate, setvbuf 분석(null 넣을때 어떻게 동작하는지))
+
+
+```c++
+int
+getchar (void)
+{
+  int result;
+  if (!_IO_need_lock (stdin))
+    return _IO_getc_unlocked (stdin);
+  _IO_acquire_lock (stdin);
+  result = _IO_getc_unlocked (stdin);	
+  _IO_release_lock (stdin);
+  return result;
+}
+```
+
+에서 `_IO_getc_unlocked`를 호출하는데
+
+```c++
+#define _IO_getc_unlocked(_fp) __getc_unlocked_body (_fp)
+
+#define __getc_unlocked_body(_fp)                                        \
+  (__glibc_unlikely ((_fp)->_IO_read_ptr >= (_fp)->_IO_read_end)        \
+   ? __uflow (_fp) : *(unsigned char *) (_fp)->_IO_read_ptr++)
+```
+
+이번에는 `__uflow`를 호출하지 않고 `fp->_IO_read_ptr`++을 수행한다.
+
+
 
 ### Invoke __underflow again & Overwrite __malloc_hook
 
