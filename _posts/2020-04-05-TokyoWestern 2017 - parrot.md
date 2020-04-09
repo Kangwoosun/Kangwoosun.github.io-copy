@@ -226,7 +226,10 @@ libc_hidden_def (_IO_file_read)
 
 ### Sync _IO_read_ptr with _IO_read_ptr by getchar()
 
-추가 포스팅중... (free_malloc_consolidate, setvbuf 분석(null 넣을때 어떻게 동작하는지))
+stdin 구조체를 조작한 뒤에 동작을 살펴보면 `scanf` 함수를 호출할때 에러가 발생해서 [rbp-0x18]에 값이 제대로 안들어가게 되고 `getchar`를 호출하게 되면 `_IO_read_ptr`이 증가하는 것을 볼 수 있다. 
+
+먼저 `scnaf` 함수에서 왜 오류가 발생하는지에 대해 알아보도록 하자.
+
 
 ```c
 int
