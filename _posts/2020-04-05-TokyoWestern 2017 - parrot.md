@@ -204,7 +204,154 @@ libc_hidden_def (_IO_file_read)
 
 ### Sync _IO_read_ptr with _IO_read_ptr by getchar()
 
-추가 포스팅중... (getchar(), scnaf error, read error, write error, free_malloc_consolidate, setvbuf 분석(null 넣을때 어떻게 동작하는지))
+추가 포스팅중... (free_malloc_consolidate, setvbuf 분석(null 넣을때 어떻게 동작하는지))
+
+```c
+int
+__vfscanf_internal (FILE *s, const char *format, va_list argptr,
+                    unsigned int mode_flags)
+{
+	.
+	.
+	.
+	
+	 switch (*f++)
+	{
+		.
+		.
+		.
+	  if (*f == L_('l'))
+		{
+		  /* A double `l' is equivalent to an `L'.  */
+		  ++f;
+		  flags |= LONGDBL | LONG;
+		}
+	  else
+		/* ints are long ints.  */
+		flags |= LONG;
+	  break;
+	.
+	.
+	.
+	switch (fc)
+	  {
+		.
+		.
+		.
+		
+		case L_('u'):        /* Unsigned decimal integer.  */
+          base = 10;
+          goto number;	    
+		.
+	    .
+	  }
+	  
+	  
+	number:
+	  c = inchar ();
+	  if (__glibc_unlikely (c == EOF))
+		input_error ();
+	  /* Check for a sign.  */
+	  if (c == L_('-') || c == L_('+'))
+		{
+		  char_buffer_add (&charbuf, c);
+		  if (width > 0)
+			--width;
+		  c = inchar ();
+		}
+	
+	
+	
+	  if (char_buffer_size (&charbuf) == 0
+		  || (char_buffer_size (&charbuf) == 1
+			  && (char_buffer_start (&charbuf)[0] == L_('+')
+				  || char_buffer_start (&charbuf)[0] == L_('-'))))
+		{
+		  /* There was no number.  If we are supposed to read a pointer
+			 we must recognize "(nil)" as well.  */
+		  if (__builtin_expect (char_buffer_size (&charbuf) == 0
+								&& (flags & READ_POINTER)
+								&& (width < 0 || width >= 5)
+								&& c == '('
+								&& TOLOWER (inchar ()) == L_('n')
+								&& TOLOWER (inchar ()) == L_('i')
+								&& TOLOWER (inchar ()) == L_('l')
+								&& inchar () == L_(')'), 1))
+			/* We must produce the value of a NULL pointer.  A single
+			   '0' digit is enough.  */
+			  char_buffer_add (&charbuf, L_('0'));
+		  else
+			{
+			  /* The last read character is not part of the number
+				 anymore.  */
+			  ungetc (c, s);
+			  conv_error ();
+			}
+	.
+	.
+	.
+}
+```
+
+`scanf`의 소스코드가 3000줄이 넘기때문에 모든 것을 분석할 수 없었고 FSOP 과정중에서 scanf가 오류를 발생하는 이유에 대해서만 분석을 진행했다.
+
+최종적으로는 마지막의 `conv_error`를 호출하면서 함수가 끝나게 된다. 해당 바이너리에서 `scanf`에 넣어주는 첫 번째 인자에 '%lu'를 넣어주기 때문에 flags에는 `LONG`(0x1)만 저장이 되어있고 base(진수)는 10으로 설정된 상태이다. 따라서  `flags & READ_POINTER`의 조건을 충족하지 못하여 에러를 일으키게 된다. 위의 검사중에서 `char_buffer_size`와 같은 함수들이 눈에 보였는데 이는 `hitcon 2019 trick or treat`에서 사용되므로 조만간 포스팅을 진행하도록 하겠다.
+
+이렇게 되는 이유는 현재 `fp->_IO_read_ptr`이 가리키는 주소에 null밖에 없기 때문에 그런것으로 예상된다.
+
+위에서 사용하는 `inchar`함수는 
+
+
+```c
+#ifdef COMPILE_WSCANF
+# define inchar()        (c == WEOF ? ((errno = inchar_errno), WEOF)              \
+                         : ((c = _IO_getwc_unlocked (s)),                      \
+                            (void) (c != WEOF                                      \
+                                    ? ++read_in                                      \
+                                    : (size_t) (inchar_errno = errno)), c))
+#else
+# define inchar()        (c == EOF ? ((errno = inchar_errno), EOF)              \
+                         : ((c = _IO_getc_unlocked (s)),                      \
+                            (void) (c != EOF                                      \
+                                    ? ++read_in                                      \
+                                    : (size_t) (inchar_errno = errno)), c))
+```
+
+`_IO_getc_unlocked`를 호출하게 되서 밑의 `getchar`를 분석한 것을 참조하면 알겠지만 `fp->_IO_read_ptr`++을 수행한다.
+
+`fp->_IO_read_ptr`의 값이 변하는가 싶지만 그 뒤에 `ungetc`를 호출하는데
+
+```
+# define ungetc(c, s)        ((void) ((int) c == EOF                                      \
+                                 || (--read_in,                                      \
+                                     _IO_sputbackc (s, (unsigned char) c))))
+ 
+# define ungetc_not_eof(c, s)        ((void) (--read_in,                              \
+                                      _IO_sputbackc (s, (unsigned char) c)))
+
+int
+_IO_sputbackc (FILE *fp, int c)
+{
+  int result;
+  if (fp->_IO_read_ptr > fp->_IO_read_base
+      && (unsigned char)fp->_IO_read_ptr[-1] == (unsigned char)c)
+    {
+      fp->_IO_read_ptr--;
+      result = (unsigned char) c;
+    }
+  else
+    result = _IO_PBACKFAIL (fp, c);
+  if (result != EOF)
+    fp->_flags &= ~_IO_EOF_SEEN;
+  return result;
+}
+libc_hidden_def (_IO_sputbackc)
+
+```
+
+`ungetc`는 `_IO_sputbackc`를 호출하게 되고 `_IO_sputbackc`는 `fp->_IO_read_ptr`--을 수행하여 읽었던 포인터를 다시 뒤로 되돌려 놓는 역할을 하게된다.
+
+이렇기 때문에 `scanf`에서는 오류만 일어나고 `fp->_IO_read_ptr`의 값에 대한 변화는 일어나지 않게된다. 이후 바이너리에서는 개행을 읽기위해 호출한 `getchar`가 실행이 되는데
 
 
 ```c++
@@ -237,7 +384,7 @@ getchar (void)
 
 ### Invoke __underflow again & Overwrite __malloc_hook
 
-그렇게 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지면 다시한번 `__underflow`를 호출하게 되고 최종적으로 `_IO_SYSREAD`를 호출하게 되는데 이때 `_IO_file_read`의 buf로 들어가게 되는 값이 `_IO_buf_base`이므로 이번에는 `__malloc_hook`을 overwrite 할 수 있게 되면서 다음 malloc을 호출할때 쉘을 얻을 수 있게 된다.
+그렇게 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지게 되면 위에서처럼 다시 `__underflow`를 호출하게 되고 최종적으로 `_IO_SYSREAD`를 호출하게 되는데 이때 `_IO_file_read`의 buf로 들어가게 되는 값이 `_IO_buf_base`이므로 이번에는 `__malloc_hook`을 overwrite 할 수 있게 되면서 다음 malloc을 호출할때 one_gadget으로 쉘을 얻을 수 있게 된다.
 
 
 
