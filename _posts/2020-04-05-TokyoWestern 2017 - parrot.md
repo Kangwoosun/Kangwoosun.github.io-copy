@@ -419,7 +419,163 @@ getchar (void)
 따라서 `_IO_buf_base`에 null byte를 덮어씌우게 되면서 `_IO_buf_base`와 `_IO_buf_end`의 값의 차이가 1보다 커지고 이 때문에 자연스럽게 버퍼링을 한다고 인식이 되는 것이다.
 (setvbuf 분석, free_malloc consolidate 분석)
 
+```c++
+int
+_IO_setvbuf (FILE *fp, char *buf, int mode, size_t size)
+{
+  int result;
+  CHECK_FILE (fp, EOF);
+  _IO_acquire_lock (fp);
+  switch (mode)
+    {
+    case _IOFBF:
+      fp->_flags &= ~(_IO_LINE_BUF|_IO_UNBUFFERED);
+      if (buf == NULL)
+        {
+          if (fp->_IO_buf_base == NULL)
+            {
+              /* There is no flag to distinguish between "fully buffered
+                 mode has been explicitly set" as opposed to "line
+                 buffering has not been explicitly set".  In both
+                 cases, _IO_LINE_BUF is off.  If this is a tty, and
+                 _IO_filedoalloc later gets called, it cannot know if
+                 it should set the _IO_LINE_BUF flag (because that is
+                 the default), or not (because we have explicitly asked
+                 for fully buffered mode).  So we make sure a buffer
+                 gets allocated now, and explicitly turn off line
+                 buffering.
+                 A possibly cleaner alternative would be to add an
+                 extra flag, but then flags are a finite resource.  */
+              if (_IO_DOALLOCATE (fp) < 0)
+                {
+                  result = EOF;
+                  goto unlock_return;
+                }
+              fp->_flags &= ~_IO_LINE_BUF;
+            }
+          result = 0;
+          goto unlock_return;
+        }
+      break;
+    case _IOLBF:
+      fp->_flags &= ~_IO_UNBUFFERED;
+      fp->_flags |= _IO_LINE_BUF;
+      if (buf == NULL)
+        {
+          result = 0;
+          goto unlock_return;
+        }
+      break;
+    case _IONBF:
+      fp->_flags &= ~_IO_LINE_BUF;
+      fp->_flags |= _IO_UNBUFFERED;
+      buf = NULL;
+      size = 0;
+      break;
+    default:
+      result = EOF;
+      goto unlock_return;
+    }
+  result = _IO_SETBUF (fp, buf, size) == NULL ? EOF : 0;
+unlock_return:
+  _IO_release_lock (fp);
+  return result;
+}
+libc_hidden_def (_IO_setvbuf)
+weak_alias (_IO_setvbuf, setvbuf)
+```
 
+해당 바이너리에서는 `setvbuf`의 세번째 인자로 `_IONBF`(0x2)를 넘겨줬기 때문에 case _IONBF부분을 살펴보면 되겠다.
+
+이후 `_IO_SETBUF`를 실행하는데 이는 vtable에서 `_IO_new_file_setbuf`와 매칭된다.
+
+```c++
+_IO_new_file_setbuf (FILE *fp, char *p, ssize_t len)
+{
+  if (_IO_default_setbuf (fp, p, len) == NULL)
+    return NULL;
+  fp->_IO_write_base = fp->_IO_write_ptr = fp->_IO_write_end
+    = fp->_IO_buf_base;
+  _IO_setg (fp, fp->_IO_buf_base, fp->_IO_buf_base, fp->_IO_buf_base);
+  return fp;
+}
+libc_hidden_ver (_IO_new_file_setbuf, _IO_file_setbuf)
+```
+
+`_IO_new_file_setbuf`에서 `_IO_default_setbuf`를 호출하게 되는데
+
+```c++
+_IO_default_setbuf (FILE *fp, char *p, ssize_t len)
+{
+    if (_IO_SYNC (fp) == EOF)
+        return NULL;
+    if (p == NULL || len == 0)
+      {
+        fp->_flags |= _IO_UNBUFFERED;
+        _IO_setb (fp, fp->_shortbuf, fp->_shortbuf+1, 0);
+      }
+    else
+      {
+        fp->_flags &= ~_IO_UNBUFFERED;
+        _IO_setb (fp, p, p+len, 0);
+      }
+    fp->_IO_write_base = fp->_IO_write_ptr = fp->_IO_write_end = 0;
+    fp->_IO_read_base = fp->_IO_read_ptr = fp->_IO_read_end = 0;
+    return fp;
+}
+```
+
+살펴보면 `_IO_default_setbuf`에서 `_IO_SYNC`를 호출하게 되는데 이는 `_IO_new_file_sync`와 매칭된다.
+
+```c++
+_IO_new_file_sync (FILE *fp)
+{
+  ssize_t delta;
+  int retval = 0;
+  /*    char* ptr = cur_ptr(); */
+  if (fp->_IO_write_ptr > fp->_IO_write_base)
+    if (_IO_do_flush(fp)) return EOF;
+  delta = fp->_IO_read_ptr - fp->_IO_read_end;
+  if (delta != 0)
+    {
+      off64_t new_pos = _IO_SYSSEEK (fp, delta, 1);
+      if (new_pos != (off64_t) EOF)
+        fp->_IO_read_end = fp->_IO_read_ptr;
+      else if (errno == ESPIPE)
+        ; /* Ignore error from unseekable devices. */
+      else
+        retval = EOF;
+    }
+  if (retval != EOF)
+    fp->_offset = _IO_pos_BAD;
+  /* FIXME: Cleanup - can this be shared? */
+  /*    setg(base(), ptr, ptr); */
+  return retval;
+}
+libc_hidden_ver (_IO_new_file_sync, _IO_file_sync)
+```
+
+처음 `setvbuf`를 실행할때 `fp->_IO_read_base`, `fp->_IO_read_ptr`, `fp->_IO_read_end`, `fp->_IO_write_base`, `fp->_IO_write_ptr`,`fp->_IO_write_end`의 값 모두 0으로 세팅되어 있다. 이 때문에 `_IO_do_flush`를 실행하지 않고 `delta`는 0, `retval`은 0을 갖게 되어 0을 리턴하게 된다.
+
+이후 함수를 빠져나와 첫번째 `p == NULL || len ==0` 검사에 걸려서 `_IO_setb (fp, fp->_shortbuf, fp->_shortbuf+1, 0)`을 실행하게 되는데 이때 `fp->_IO_buf_base`와 `fp->_IO_buf_end`의 값이 세팅된다.
+
+```c
+void
+_IO_setb (FILE *f, char *b, char *eb, int a)
+{
+  if (f->_IO_buf_base && !(f->_flags & _IO_USER_BUF))
+    free (f->_IO_buf_base);
+  f->_IO_buf_base = b;
+  f->_IO_buf_end = eb;
+  if (a)
+    f->_flags &= ~_IO_USER_BUF;
+  else
+    f->_flags |= _IO_USER_BUF;
+}
+libc_hidden_def (_IO_setb)
+```
+
+이후 `_IO_new_file_setbuf` 함수에서 `fp->_IO_buf_end`를 제외한 포인터에 위에서 세팅된 `fp->_IO_buf_base`의 값을 넣게 되면서 나머지 포인터들의 초기화가 진행된다.
 
 
 ## slv.py
@@ -511,8 +667,10 @@ if __name__ == '__main__':
 
 ## 느낀 점
 
-
-
+- FSOP와 관련되서 엄청나게 놀라운 것이 많다는 것을 알게되었다.(setvbuf, stdin, scanf, etc..)
+- 분석을 통해서 _IO_FILE 구조체의 맴버들이 어떤 역할을 하게되는지 조금 알게되었다.
+- scanf 분석을 좀 더 진행해봐야겠다.
+- setvbuf의 no buffering이 어떻게 동작하는지 알게됨.
 
 ## Reference
 
