@@ -100,14 +100,11 @@ exploit 환경은 glibc-2.23이 아닌 glibc-2.19임을 상기해주길 바란�
 
 malloc(0x10) > malloc(0x70) > malloc(0x80) > malloc(0x10) 이렇게 할당하게 되면 0x80에 해당하는 chunk가 할당되고 해제될때 `malloc_consolidate`를 호출하게 된다. 이때 처음 할당한 0x10에 해당하는 chunk가 `fast bin`에서 `unsorted bin`으로 넘어가게 되면서 library 주소가 fd, bk에 쓰이게 되고 마지막에 할당된 0x10을 호출하게 되면 write에서 leak이 되게 된다.
 
-+++ free에서 malloc_consolidate 호출하는 조건 알아보기 +++
-
-
 ### Off_by_null to _IO_buf_base
 
 이제 library 주소를 알게 되었으니 FSOP를 진행하면 된다. 여러 풀이과정이 있지만 `_IO_buf_base`의 마지막 1byte를 null byte로 만드는 것으로 최종적으로 malloc_hook을 overwrite하는 방향으로 진행하겠다.
 +++ setvbuf 분석 필요 +++
-바이너리의 시작부분 쯤에서 `setvbuf`로 stdin의 버퍼링을 없앤다. 그런데 size를 `_IO_buf_base+57`만큼 입력해서 `_IO_buf_base`의 마지막 byte를 null로 만들어버리면 `scanf`와 같은 IO함수에서 버퍼링이 있다고 인식하게 된다. (추가 분석 필요)
+바이너리의 시작부분 쯤에서 `setvbuf`로 stdin의 버퍼링을 없앤다. 그런데 size를 `_IO_buf_base+57`만큼 입력해서 `_IO_buf_base`의 마지막 byte를 null로 만들어버리면 `scanf`와 같은 IO함수에서 버퍼링이 있다고 인식하게 된다.(`setvbuf`의 내용은 아랫부분에서 다루도록 하겠다.)
 
 그렇게 `scanf` -> `__vfscanf_internal` -> `inchar` -> `_IO_getc_unlocked ` -> `__getc_unlocked_body ` 순서대로 부르게 된다.
 
@@ -117,33 +114,58 @@ malloc(0x10) > malloc(0x70) > malloc(0x80) > malloc(0x10) 이렇게 할당하게
    ? __uflow (_fp) : *(unsigned char *) (_fp)->_IO_read_ptr++)
 ```
 
-`_IO_buf_base`가 조작된 상태에서 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아진 상태에서 `scanf`를 호출하기 때문에 `__getc_unlocked_body`에서 `__uflow`(glibc-2.23에서는 `__underflow`임)를 호출하게 된다.
+`_IO_buf_base`가 조작되고 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아진 상태에서 `scanf`를 호출하기 때문에 `__getc_unlocked_body`에서 `__uflow`를 호출하게 된다.
 
 
 ### Invoke __underflow
 
 여기서부터 `https://youngsouk-hack.tistory.com/66`의 글을 많이 참조했다.
 
-```c++
-int
-__underflow (_IO_FILE *fp)
+```c
+const struct _IO_jump_t _IO_file_jumps libio_vtable =
 {
-	.
-	.
-	.
-	
-  if (_IO_in_backup (fp))
-    {
-      _IO_switch_to_main_get_area (fp);
-    .
-	.
-	.
-  return _IO_UNDERFLOW (fp);
-}
-libc_hidden_def (__underflow)
+  JUMP_INIT_DUMMY,
+  JUMP_INIT(finish, _IO_file_finish),
+  JUMP_INIT(overflow, _IO_file_overflow),
+  JUMP_INIT(underflow, _IO_file_underflow),
+  JUMP_INIT(uflow, _IO_default_uflow),
+  JUMP_INIT(pbackfail, _IO_default_pbackfail),
+  JUMP_INIT(xsputn, _IO_file_xsputn),
+  JUMP_INIT(xsgetn, _IO_file_xsgetn),
+  JUMP_INIT(seekoff, _IO_new_file_seekoff),
+  JUMP_INIT(seekpos, _IO_default_seekpos),
+  JUMP_INIT(setbuf, _IO_new_file_setbuf),
+  JUMP_INIT(sync, _IO_new_file_sync),
+  JUMP_INIT(doallocate, _IO_file_doallocate),
+  JUMP_INIT(read, _IO_file_read),
+  JUMP_INIT(write, _IO_new_file_write),
+  JUMP_INIT(seek, _IO_file_seek),
+  JUMP_INIT(close, _IO_file_close),
+  JUMP_INIT(stat, _IO_file_stat),
+  JUMP_INIT(showmanyc, _IO_default_showmanyc),
+  JUMP_INIT(imbue, _IO_default_imbue)
+};
 ```
 
-`_IO_UNDERFLOW`를 호출하는데 이는 vtable의 underflow를 호출하게 되면서 `_IO_new_file_underflow`를 호출하게 된다.
+위를 참조해보면 `__uflow`는 `_IO_default_uflow`로 초기화 되어있기 때문에 `_IO_default_uflow`를 호출하게 된다.
+
+```
+int
+_IO_default_uflow (FILE *fp)
+{
+  int ch = _IO_UNDERFLOW (fp);
+  if (ch == EOF)
+    return EOF;
+  return *(unsigned char *) fp->_IO_read_ptr++;
+}
+libc_hidden_def (_IO_default_uflow)
+```
+
+`_IO_default_uflow`는 내부적으로 `_IO_UNDERFLOW`를 호출하는데 이는 vtable의 underflow를 호출하게 되면서 `_IO_new_file_underflow`를 호출하게 된다.
+
+```c++
+#define _IO_UNDERFLOW(FP) JUMP0 (__underflow, FP)
+```
 
 ```c++
 int
@@ -301,7 +323,6 @@ __vfscanf_internal (FILE *s, const char *format, va_list argptr,
 
 위에서 사용하는 `inchar`함수는 
 
-
 ```c
 #ifdef COMPILE_WSCANF
 # define inchar()        (c == WEOF ? ((errno = inchar_errno), WEOF)              \
@@ -385,6 +406,16 @@ getchar (void)
 ### Invoke __underflow again & Overwrite __malloc_hook
 
 그렇게 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지게 되면 위에서처럼 다시 `__underflow`를 호출하게 되고 최종적으로 `_IO_SYSREAD`를 호출하게 되는데 이때 `_IO_file_read`의 buf로 들어가게 되는 값이 `_IO_buf_base`이므로 이번에는 `__malloc_hook`을 overwrite 할 수 있게 되면서 다음 malloc을 호출할때 one_gadget으로 쉘을 얻을 수 있게 된다.
+
+### setvbuf
+
+이쯤되면 처음 `_IO_buf_base`에 null byte가 삽입되었을때, 버퍼링이 있다고 착각하게 된다고 했던것에 대한 의문점을 가지게 될것이다. 이에 대해서는 `setvbuf`에 대해 알아야 되는데 `setvbuf`에서 버퍼링을 없애게 되면  `_IO_read_ptr`과 `_IO_read_end`의 값이 같고 `_IO_buf_end`와 `_IO_buf_base`의 차이가 1이 되게 된다.
+
+이 상태에서 `scanf`를 호출하게 되면 `_IO_read_ptr`과 `_IO_read_end`의 값이 같기 때문에 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 그런데 `__uflow`의 함수 동작을 보게되면 `_IO_UNDERFLOW`를 호출하고 리턴할때 `_IO_read_ptr`++을 수행하게 된다. 이 때문에 다시 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지게 되고 또 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 버퍼링을 없앤다는 것은 `_IO_buf_base`와 `_IO_buf_end`의 공간을 1byte로 만들어서 IO의 내용을 담아두지 않고 계속해서 함수를 호출해 처리하는 것이다.
+
+따라서 `_IO_buf_base`에 null byte를 덮어씌우게 되면서 `_IO_buf_base`와 `_IO_buf_end`의 값의 차이가 1보다 커지고 이 때문에 자연스럽게 버퍼링을 한다고 인식이 되는 것이다.
+(setvbuf 분석, free_malloc consolidate 분석)
+
 
 
 
