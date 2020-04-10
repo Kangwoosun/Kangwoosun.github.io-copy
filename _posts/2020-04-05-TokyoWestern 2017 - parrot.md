@@ -7,7 +7,7 @@ tags: tokyowestern, pwn, fsop, off_by_null
 
 ## Introduction
 
-정말 우물 안 개구리라는 것을 느끼개 해준 문제이다. 최신동향 조금이나마 따라가고 있다고 생각했었는데 ㅋㅋ.. 어림없지 컷! 2017년 문제부터 풀고와~ ㅋㅋㅋ
+정말 우물 안 개구리라는 것을 느끼게 해준 문제이다. 최신동향 조금이나마 따라가고 있다고 생각했었는데 ㅋㅋ.. 어림없지 컷! 2017년 문제부터 풀고와~ ㅋㅋㅋ
 
 개인적으로 너무 답도 없다고 느껴서 WriteUp을 참고했다.
 
@@ -341,7 +341,7 @@ __vfscanf_internal (FILE *s, const char *format, va_list argptr,
                                     : (size_t) (inchar_errno = errno)), c))
 ```
 
-`_IO_getc_unlocked`를 호출하게 되서 밑의 `getchar`를 분석한 것을 참조하면 알겠지만 `fp->_IO_read_ptr`++을 수행한다.
+`_IO_getc_unlocked`를 호출하게 되서 밑의 `getchar`를 분석한 것을 참조하면 알겠지만 `fp->_IO_read_ptr++`을 수행한다.
 
 `fp->_IO_read_ptr`의 값이 변하는가 싶지만 그 뒤에 `ungetc`를 호출하는데
 
@@ -373,7 +373,7 @@ libc_hidden_def (_IO_sputbackc)
 
 ```
 
-`ungetc`는 `_IO_sputbackc`를 호출하게 되고 `_IO_sputbackc`는 `fp->_IO_read_ptr`--을 수행하여 읽었던 포인터를 다시 뒤로 되돌려 놓는 역할을 하게된다.
+`ungetc`는 `_IO_sputbackc`를 호출하게 되고 `_IO_sputbackc`는 `fp->_IO_read_ptr--`을 수행하여 읽었던 포인터를 다시 뒤로 되돌려 놓는 역할을 하게된다.
 
 이렇기 때문에 `scanf`에서는 오류만 일어나고 `fp->_IO_read_ptr`의 값에 대한 변화는 일어나지 않게된다. 이후 바이너리에서는 개행을 읽기위해 호출한 `getchar`가 실행이 되는데
 
@@ -555,7 +555,7 @@ _IO_new_file_sync (FILE *fp)
 libc_hidden_ver (_IO_new_file_sync, _IO_file_sync)
 ```
 
-처음 `setvbuf`를 실행할때 `fp->_IO_read_base`, `fp->_IO_read_ptr`, `fp->_IO_read_end`, `fp->_IO_write_base`, `fp->_IO_write_ptr`,`fp->_IO_write_end`의 값 모두 0으로 세팅되어 있다. 이 때문에 `_IO_do_flush`를 실행하지 않고 `delta`는 0, `retval`은 0을 갖게 되어 0을 리턴하게 된다.
+처음 `setvbuf`를 실행할때 `_IO_read_base`, `_IO_read_ptr`, `_IO_read_end`, `_IO_write_base`, `_IO_write_ptr`,`_IO_write_end`의 값 모두 0으로 세팅되어 있다. 이 때문에 `_IO_do_flush`를 실행하지 않고 `delta`는 0, `retval`은 0을 갖게 되어 0을 리턴하게 된다.
 
 이후 함수를 빠져나와 첫번째 `p == NULL || len ==0` 검사에 걸려서 `_IO_setb (fp, fp->_shortbuf, fp->_shortbuf+1, 0)`을 실행하게 되는데 이때 `fp->_IO_buf_base`와 `fp->_IO_buf_end`의 값이 세팅된다.
 
