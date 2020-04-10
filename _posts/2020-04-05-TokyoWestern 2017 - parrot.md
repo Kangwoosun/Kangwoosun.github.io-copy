@@ -392,7 +392,7 @@ getchar (void)
 }
 ```
 
-에서 `_IO_getc_unlocked`를 호출하는데
+`getchar`에서 `_IO_getc_unlocked`를 호출하는데
 
 ```c++
 #define _IO_getc_unlocked(_fp) __getc_unlocked_body (_fp)
@@ -414,10 +414,11 @@ getchar (void)
 
 이쯤되면 처음 `_IO_buf_base`에 null byte가 삽입되었을때, 버퍼링이 있다고 착각하게 된다고 했던것에 대한 의문점을 가지게 될것이다. 이에 대해서는 `setvbuf`에 대해 알아야 되는데 `setvbuf`에서 버퍼링을 없애게 되면  `_IO_read_ptr`과 `_IO_read_end`의 값이 같고 `_IO_buf_end`와 `_IO_buf_base`의 차이가 1이 되게 된다.
 
-이 상태에서 `scanf`를 호출하게 되면 `_IO_read_ptr`과 `_IO_read_end`의 값이 같기 때문에 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 그런데 `__uflow`의 함수 동작을 보게되면 `_IO_UNDERFLOW`를 호출하고 리턴할때 `_IO_read_ptr`++을 수행하게 된다. 이 때문에 다시 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지게 되고 또 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 버퍼링을 없앤다는 것은 `_IO_buf_base`와 `_IO_buf_end`의 공간을 1byte로 만들어서 IO의 내용을 담아두지 않고 계속해서 함수를 호출해 처리하는 것이다.
+이 상태에서 `scanf`를 호출하게 되면 `_IO_read_ptr`과 `_IO_read_end`의 값이 같기 때문에 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 그런데 `__uflow`의 함수 동작을 보게되면 `_IO_UNDERFLOW`를 호출하고 리턴할때 `_IO_read_ptr++`을 수행하게 된다. 이 때문에 다시 `_IO_read_ptr`과 `_IO_read_end`의 값이 같아지게 되고 또 `inchar`를 호출할때 `__uflow`를 실행하게 된다. 버퍼링을 없앤다는 것은 `_IO_buf_base`와 `_IO_buf_end`의 공간을 1byte로 만들어서 IO의 내용을 담아두지 않고 계속해서 함수를 호출해 처리하는 것이다.
 
 따라서 `_IO_buf_base`에 null byte를 덮어씌우게 되면서 `_IO_buf_base`와 `_IO_buf_end`의 값의 차이가 1보다 커지고 이 때문에 자연스럽게 버퍼링을 한다고 인식이 되는 것이다.
-(setvbuf 분석, free_malloc consolidate 분석)
+
+`setvbuf`함수의 내부를 보도록 하겠다.
 
 ```c++
 int
