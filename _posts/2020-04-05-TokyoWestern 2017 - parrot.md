@@ -103,7 +103,7 @@ malloc(0x10) > malloc(0x70) > malloc(0x80) > malloc(0x10) 이렇게 할당하게
 ### Off_by_null to _IO_buf_base
 
 이제 library 주소를 알게 되었으니 FSOP를 진행하면 된다. 여러 풀이과정이 있지만 `_IO_buf_base`의 마지막 1byte를 null byte로 만드는 것으로 최종적으로 malloc_hook을 overwrite하는 방향으로 진행하겠다.
-+++ setvbuf 분석 필요 +++
+
 바이너리의 시작부분 쯤에서 `setvbuf`로 stdin의 버퍼링을 없앤다. 그런데 size를 `_IO_buf_base+57`만큼 입력해서 `_IO_buf_base`의 마지막 byte를 null로 만들어버리면 `scanf`와 같은 IO함수에서 버퍼링이 있다고 인식하게 된다.(`setvbuf`의 내용은 아랫부분에서 다루도록 하겠다.)
 
 그렇게 `scanf` -> `__vfscanf_internal` -> `inchar` -> `_IO_getc_unlocked ` -> `__getc_unlocked_body ` 순서대로 부르게 된다.
@@ -402,7 +402,7 @@ getchar (void)
    ? __uflow (_fp) : *(unsigned char *) (_fp)->_IO_read_ptr++)
 ```
 
-이번에는 `__uflow`를 호출하지 않고 `fp->_IO_read_ptr`++을 수행한다.
+이번에는 `__uflow`를 호출하지 않고 `fp->_IO_read_ptr++`을 수행한다.
 
 
 
@@ -486,7 +486,7 @@ libc_hidden_def (_IO_setvbuf)
 weak_alias (_IO_setvbuf, setvbuf)
 ```
 
-해당 바이너리에서는 `setvbuf`의 세번째 인자로 `_IONBF`(0x2)를 넘겨줬기 때문에 case _IONBF부분을 살펴보면 되겠다.
+해당 바이너리에서는 `setvbuf`의 세번째 인자로 `_IONBF`(0x2)를 넘겨줬기 때문에 `case _IONBF`부분을 살펴보면 되겠다.
 
 이후 `_IO_SETBUF`를 실행하는데 이는 vtable에서 `_IO_new_file_setbuf`와 매칭된다.
 
