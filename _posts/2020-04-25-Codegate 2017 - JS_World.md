@@ -5,8 +5,6 @@ categories:
 tags: javascript_engine, javascript, browser, pwn, compiler
 ---
 
-목차:
-
 - Intruction
 - Vunlnerability
 - Exploit
@@ -23,7 +21,7 @@ tags: javascript_engine, javascript, browser, pwn, compiler
 
 확실히 처음 접하는 플랫폼이다보니 쫌... 많이 ^^ 생소했다..
 
-이 문제 덕분에 browser에 새끼발가락 정도는 걸치게 된것같아서 기쁘다. :smile:
+이 문제 덕분에 browser에 새끼발가락 정도는 걸치게 된것같아서 기쁘다. 
 
 롸업은
 
