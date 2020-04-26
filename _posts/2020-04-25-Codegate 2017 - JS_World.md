@@ -426,10 +426,9 @@ jit address 이용할때 trigger과 같이 반복할 함수를 먼저 반복호�
 
 ## Reference
 
-```
-[https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/](https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/)
-[https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld](https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld)
-[https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/](https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/)
-```
+- [https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/](https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/)
+- [https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld](https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld)
+- [https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/](https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/)
+
 
 :smile::smile::smile:
