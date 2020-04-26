@@ -25,11 +25,11 @@ tags: javascript_engine, javascript, browser, pwn, compiler
 
 롸업은
 
-```
+
 https://bpsecblog.wordpress.com/2017/04/27/javascript_engine_array_oob/
 https://pwn3r.tistory.com/entry/CODEGATE-2017-QUAL-jsworld
 https://defenit.kr/2019/10/18/Pwn/%E3%84%B4%20WriteUps/2017_codegate_js_world/
-```
+
 
 을 참고했다. 특히 첫 번째 블로그에서 출제자 입장에서의 문제풀이를 보니까 일반적인 롸업이랑은 조금 다른 느낌을 받았다. 문제를 낸 이유와 과정들이 담겨있다보니 색달랐다. 아무튼 그랬다. ㅎㅎ;
 
