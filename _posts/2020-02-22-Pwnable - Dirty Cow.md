@@ -578,7 +578,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 
 여기 적은 거라도 올해 안에 제대로 공부해보자!!  
 
-p.s. 애지간하면 원문 보세요 그냥..   ~~옆에 있는 신승민 websec level 19 풀면서 자-꾸 찡찡댐,,~~
+p.s. 애지간하면 원문 보세요 그냥..   ~~옆에 있는 신모씨 websec level 19 풀면서 자-꾸 찡찡댐,,~~
 
 
 ## Reference
