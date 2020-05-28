@@ -72,10 +72,312 @@ cloud 서비스 자체가 docker형식이라 그런것같은데... 정확한 원
 
 여기서 전역변수에 overflow가 일어나고 그 뒤에 있던 pointer를 input으로 덮을 수 있게 되면서 tag와 password를 입력하는 부분에서 원하는 곳에 원하는 값을 2번 쓸 수 있다.
 
-2번에서 FSB를 이용해서 leak이 가능하다.(벌레 이름을 '%p'로 하면 됨)
+2번에서 FSB를 이용해서 leak이 가능하다.(벌레 이름을 `%p`로 하면 됨)
 
 
 ## Exploit
+
+
+위에서 말했다시피 1번에서 bug를 찾아서 name을 `%p`로 지정해준뒤 2번에서 FSB가 일어나면서 libc leak이 일어난다.
+
+문제는 여기서부터다. 위에서 언급했는데 쓰기가 2번이 가능한데 대체 어디다가 쓸것인가가 문제이다.
+
+답은 exit함수 내부에 있다. 3번을 실행하고 바이너리가 종료되는데 main함수를 실행시켜주는 `__libc_start_main`를 살펴보면
+
+```c
+# define LIBC_START_MAIN __libc_start_main
+
+STATIC int
+LIBC_START_MAIN (int (*main) (int, char **, char ** MAIN_AUXVEC_DECL),
+                 int argc, char **argv,
+#ifdef LIBC_START_MAIN_AUXVEC_ARG
+                 ElfW(auxv_t) *auxvec,
+#endif
+                 __typeof (main) init,
+                 void (*fini) (void),
+                 void (*rtld_fini) (void), void *stack_end)
+{
+  /* Result of the 'main' function.  */
+  int result;
+  __libc_multiple_libcs = &_dl_starting_up && !_dl_starting_up;
+#ifndef SHARED
+  _dl_relocate_static_pie ();
+  char **ev = &argv[argc + 1];
+  __environ = ev;
+  /* Store the lowest stack address.  This is done in ld.so if this is
+     the code for the DSO.  */
+  __libc_stack_end = stack_end;
+# ifdef HAVE_AUX_VECTOR
+  /* First process the auxiliary vector since we need to find the
+     program header to locate an eventually present PT_TLS entry.  */
+#  ifndef LIBC_START_MAIN_AUXVEC_ARG
+  ElfW(auxv_t) *auxvec;
+  {
+    char **evp = ev;
+    while (*evp++ != NULL)
+      ;
+    auxvec = (ElfW(auxv_t) *) evp;
+  }
+#  endif
+  _dl_aux_init (auxvec);
+  if (GL(dl_phdr) == NULL)
+# endif
+    {
+      /* Starting from binutils-2.23, the linker will define the
+         magic symbol __ehdr_start to point to our own ELF header
+         if it is visible in a segment that also includes the phdrs.
+         So we can set up _dl_phdr and _dl_phnum even without any
+         information from auxv.  */
+      extern const ElfW(Ehdr) __ehdr_start
+        __attribute__ ((weak, visibility ("hidden")));
+      if (&__ehdr_start != NULL)
+        {
+          assert (__ehdr_start.e_phentsize == sizeof *GL(dl_phdr));
+          GL(dl_phdr) = (const void *) &__ehdr_start + __ehdr_start.e_phoff;
+          GL(dl_phnum) = __ehdr_start.e_phnum;
+        }
+    }
+  /* Initialize very early so that tunables can use it.  */
+  __libc_init_secure ();
+  __tunables_init (__environ);
+  ARCH_INIT_CPU_FEATURES ();
+  /* Perform IREL{,A} relocations.  */
+  ARCH_SETUP_IREL ();
+  /* The stack guard goes into the TCB, so initialize it early.  */
+  ARCH_SETUP_TLS ();
+  /* In some architectures, IREL{,A} relocations happen after TLS setup in
+     order to let IFUNC resolvers benefit from TCB information, e.g. powerpc's
+     hwcap and platform fields available in the TCB.  */
+  ARCH_APPLY_IREL ();
+  /* Set up the stack checker's canary.  */
+  uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random);
+# ifdef THREAD_SET_STACK_GUARD
+  THREAD_SET_STACK_GUARD (stack_chk_guard);
+# else
+  __stack_chk_guard = stack_chk_guard;
+# endif
+# ifdef DL_SYSDEP_OSCHECK
+  if (!__libc_multiple_libcs)
+    {
+      /* This needs to run to initiliaze _dl_osversion before TLS
+         setup might check it.  */
+      DL_SYSDEP_OSCHECK (__libc_fatal);
+    }
+# endif
+  /* Initialize libpthread if linked in.  */
+  if (__pthread_initialize_minimal != NULL)
+    __pthread_initialize_minimal ();
+  /* Set up the pointer guard value.  */
+  uintptr_t pointer_chk_guard = _dl_setup_pointer_guard (_dl_random,
+                                                         stack_chk_guard);
+# ifdef THREAD_SET_POINTER_GUARD
+  THREAD_SET_POINTER_GUARD (pointer_chk_guard);
+# else
+  __pointer_chk_guard_local = pointer_chk_guard;
+# endif
+#endif /* !SHARED  */
+  /* Register the destructor of the dynamic linker if there is any.  */
+  if (__glibc_likely (rtld_fini != NULL))
+    __cxa_atexit ((void (*) (void *)) rtld_fini, NULL, NULL);
+#ifndef SHARED
+  /* Call the initializer of the libc.  This is only needed here if we
+     are compiling for the static library in which case we haven't
+     run the constructors in `_dl_start_user'.  */
+  __libc_init_first (argc, argv, __environ);
+  /* Register the destructor of the program, if any.  */
+  if (fini)
+    __cxa_atexit ((void (*) (void *)) fini, NULL, NULL);
+  /* Some security at this point.  Prevent starting a SUID binary where
+     the standard file descriptors are not opened.  We have to do this
+     only for statically linked applications since otherwise the dynamic
+     loader did the work already.  */
+  if (__builtin_expect (__libc_enable_secure, 0))
+    __libc_check_standard_fds ();
+#endif
+  /* Call the initializer of the program, if any.  */
+#ifdef SHARED
+  if (__builtin_expect (GLRO(dl_debug_mask) & DL_DEBUG_IMPCALLS, 0))
+    GLRO(dl_debug_printf) ("\ninitialize program: %s\n\n", argv[0]);
+#endif
+  if (init)
+    (*init) (argc, argv, __environ MAIN_AUXVEC_PARAM);
+#ifdef SHARED
+  /* Auditing checkpoint: we have a new object.  */
+  if (__glibc_unlikely (GLRO(dl_naudit) > 0))
+    {
+      struct audit_ifaces *afct = GLRO(dl_audit);
+      struct link_map *head = GL(dl_ns)[LM_ID_BASE]._ns_loaded;
+      for (unsigned int cnt = 0; cnt < GLRO(dl_naudit); ++cnt)
+        {
+          if (afct->preinit != NULL)
+            afct->preinit (&head->l_audit[cnt].cookie);
+          afct = afct->next;
+        }
+    }
+#endif
+#ifdef SHARED
+  if (__glibc_unlikely (GLRO(dl_debug_mask) & DL_DEBUG_IMPCALLS))
+    GLRO(dl_debug_printf) ("\ntransferring control: %s\n\n", argv[0]);
+#endif
+#ifndef SHARED
+  _dl_debug_initialize (0, LM_ID_BASE);
+#endif
+#ifdef HAVE_CLEANUP_JMP_BUF
+  /* Memory for the cancellation buffer.  */
+  struct pthread_unwind_buf unwind_buf;
+  int not_first_call;
+  not_first_call = setjmp ((struct __jmp_buf_tag *) unwind_buf.cancel_jmp_buf);
+  if (__glibc_likely (! not_first_call))
+    {
+      struct pthread *self = THREAD_SELF;
+      /* Store old info.  */
+      unwind_buf.priv.data.prev = THREAD_GETMEM (self, cleanup_jmp_buf);
+      unwind_buf.priv.data.cleanup = THREAD_GETMEM (self, cleanup);
+      /* Store the new cleanup handler info.  */
+      THREAD_SETMEM (self, cleanup_jmp_buf, &unwind_buf);
+      /* Run the program.  */
+      result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
+    }
+  else
+    {
+      /* Remove the thread-local data.  */
+# ifdef SHARED
+      PTHFCT_CALL (ptr__nptl_deallocate_tsd, ());
+# else
+      extern void __nptl_deallocate_tsd (void) __attribute ((weak));
+      __nptl_deallocate_tsd ();
+# endif
+      /* One less thread.  Decrement the counter.  If it is zero we
+         terminate the entire process.  */
+      result = 0;
+# ifdef SHARED
+      unsigned int *ptr = __libc_pthread_functions.ptr_nthreads;
+#  ifdef PTR_DEMANGLE
+      PTR_DEMANGLE (ptr);
+#  endif
+# else
+      extern unsigned int __nptl_nthreads __attribute ((weak));
+      unsigned int *const ptr = &__nptl_nthreads;
+# endif
+      if (! atomic_decrement_and_test (ptr))
+        /* Not much left to do but to exit the thread, not the process.  */
+        __exit_thread ();
+    }
+#else
+  /* Nothing fancy, just call the function.  */
+  result = main (argc, argv, __environ MAIN_AUXVEC_PARAM);
+#endif
+  exit (result);
+}
+
+```
+
+마지막에 보면 main의 return값을 `exit`함수의 인자로 넣고 `exit`함수를 실행시키게 된다.
+
+`exit`함수를 살펴보자.
+
+`exit`
+
+```c
+
+void
+exit (int status)
+{
+  __run_exit_handlers (status, &__exit_funcs, true, true);
+}
+libc_hidden_def (exit)
+
+
+void
+attribute_hidden
+__run_exit_handlers (int status, struct exit_function_list **listp,
+                     bool run_list_atexit, bool run_dtors)
+{
+  /* First, call the TLS destructors.  */
+#ifndef SHARED
+  if (&__call_tls_dtors != NULL)
+#endif
+    if (run_dtors)
+      __call_tls_dtors ();
+  /* We do it this way to handle recursive calls to exit () made by
+     the functions registered with `atexit' and `on_exit'. We call
+     everyone on the list and use the status value in the last
+     exit (). */
+  while (true)
+    {
+      struct exit_function_list *cur;
+      __libc_lock_lock (__exit_funcs_lock);
+    restart:
+      cur = *listp;
+      if (cur == NULL)
+        {
+          /* Exit processing complete.  We will not allow any more
+             atexit/on_exit registrations.  */
+          __exit_funcs_done = true;
+          __libc_lock_unlock (__exit_funcs_lock);
+          break;
+        }
+      while (cur->idx > 0)
+        {
+          struct exit_function *const f = &cur->fns[--cur->idx];
+          const uint64_t new_exitfn_called = __new_exitfn_called;
+          /* Unlock the list while we call a foreign function.  */
+          __libc_lock_unlock (__exit_funcs_lock);
+          switch (f->flavor)
+            {
+              void (*atfct) (void);
+              void (*onfct) (int status, void *arg);
+              void (*cxafct) (void *arg, int status);
+            case ef_free:
+            case ef_us:
+              break;
+            case ef_on:
+              onfct = f->func.on.fn;
+#ifdef PTR_DEMANGLE
+              PTR_DEMANGLE (onfct);
+#endif
+              onfct (status, f->func.on.arg);
+              break;
+            case ef_at:
+              atfct = f->func.at;
+#ifdef PTR_DEMANGLE
+              PTR_DEMANGLE (atfct);
+#endif
+              atfct ();
+              break;
+            case ef_cxa:
+              /* To avoid dlclose/exit race calling cxafct twice (BZ 22180),
+                 we must mark this function as ef_free.  */
+              f->flavor = ef_free;
+              cxafct = f->func.cxa.fn;
+#ifdef PTR_DEMANGLE
+              PTR_DEMANGLE (cxafct);
+#endif
+              cxafct (f->func.cxa.arg, status);
+              break;
+            }
+          /* Re-lock again before looking at global state.  */
+          __libc_lock_lock (__exit_funcs_lock);
+          if (__glibc_unlikely (new_exitfn_called != __new_exitfn_called))
+            /* The last exit function, or another thread, has registered
+               more exit functions.  Start the loop over.  */
+            goto restart;
+        }
+      *listp = cur->next;
+      if (*listp != NULL)
+        /* Don't free the last element in the chain, this is the statically
+           allocate element.  */
+        free (cur);
+      __libc_lock_unlock (__exit_funcs_lock);
+    }
+  if (run_list_atexit)
+    RUN_HOOK (__libc_atexit, ());
+  _exit (status);
+}
+
+```
+
+`exit`내부에서 `__run_exit_handlers`를 호출해서 처리를 진행하는데 여기서 제일 아래쪽으로 보면 `free (cur)`을 실행하는 것을 볼 수 있다.
 
 
 
