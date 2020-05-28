@@ -379,7 +379,87 @@ __run_exit_handlers (int status, struct exit_function_list **listp,
 
 `exit`내부에서 `__run_exit_handlers`를 호출해서 처리를 진행하는데 여기서 제일 아래쪽으로 보면 `free (cur)`을 실행하는 것을 볼 수 있다.
 
+해당 구문으로 들어가기 위해서는 두가지 조건을 만족해야된다.
 
+1. cur->next != NULL
+2. cur->idx <= 0
+
+여기서 이제 `cur` 변수가 어떤 값인지 살펴보자.
+
+
+```c
+__run_exit_handlers (status, &__exit_funcs, true, true);
+
+
+__run_exit_handlers (int status, struct exit_function_list **listp,
+                     bool run_list_atexit, bool run_dtors)
+
+cur = *listp;
+```
+
+결국 `cur`의 초기값은 `__exit_funcs`의 주소가 된다.
+
+```c
+static struct exit_function_list initial;
+struct exit_function_list *__exit_funcs = &initial;
+```
+
+`cxa_atexit.c` 소스코드를 보면 `__exit_funcs`의 값에 `initial`의 주소를 넣는다. 정리하자면 `cur`의 초기값은 결국 `initial`의 주소라는 것이다.
+
+따라서 1, 2번의 조건은 
+
+1. initial->next != NULL
+2. initial->idx <= 0 
+
+정도로 생각할 수 있다. 그러니까 전역변수인 `initial`의 next와 idx의 값을 조작하고 `__free_hook`의 값을 one_gadget으로 설정해주면 `exit`함수를 호출해서 쉘을 얻을 수 있게 된다.
+
+`exit` 내부 소스를 확인하면 while문 안에 switch로 무언가를 실행하는 것을 볼 수 있다. 정상적인 `exit`의 흐름일때 
+
+```c
+case ef_cxa:
+              /* To avoid dlclose/exit race calling cxafct twice (BZ 22180),
+                 we must mark this function as ef_free.  */
+              f->flavor = ef_free;
+              cxafct = f->func.cxa.fn;
+#ifdef PTR_DEMANGLE
+              PTR_DEMANGLE (cxafct);
+#endif
+              cxafct (f->func.cxa.arg, status);
+              break;
+```
+
+이부분을 실행하게 되는데 여기서 의문이 들었던 것이 그냥 `f->func.cxa.fn`의 값을 `system`의 주소로 쓰고, `f->func.cxa.arg`에 `/bin/sh`을 넣으면 안되는 것인가? 해서 해보니까 안된다.
+
+`PTR_DEMANGLE`이라는 매크로 때문인데 해당 매크로에 `f->func.cxa.fn`를 인자로 넣는것을 볼 수 있다. 매크로 내용을 살펴보면
+
+```c
+# ifdef __ASSEMBLER__
+#  define PTR_MANGLE(reg)        xor %fs:POINTER_GUARD, reg;                      \
+                                rol $2*LP_SIZE+1, reg
+#  define PTR_DEMANGLE(reg)        ror $2*LP_SIZE+1, reg;                              \
+                                xor %fs:POINTER_GUARD, reg
+# else
+#  define PTR_MANGLE(var)        asm ("xor %%fs:%c2, %0\n"                      \
+                                     "rol $2*" LP_SIZE "+1, %0"                      \
+                                     : "=r" (var)                              \
+                                     : "0" (var),                              \
+                                       "i" (offsetof (tcbhead_t,              \
+                                                      pointer_guard)))
+#  define PTR_DEMANGLE(var)        asm ("ror $2*" LP_SIZE "+1, %0\n"              \
+                                     "xor %%fs:%c2, %0"                              \
+                                     : "=r" (var)                              \
+                                     : "0" (var),                              \
+                                       "i" (offsetof (tcbhead_t,              \
+                                                      pointer_guard)))
+```
+
+... 그렇다. 바이너리를 실행할때 마다 커널에서 주는 난수 `pointer_guard`를 가지고 xor연산을 한다. 이 문제에서는 `pointer_guard`의 값을 알아내는 방법이 없으므로 `f->func.cxa.fn`을 사용하여 익스를 진행하는 것은 문제가 있다.
+
+뭐 결론적으로 이렇게 `__free_hook`의 값과 `initial->next`, `initial->idx`의 값을 조작해주면 쉘을 얻을 수 있다. 한 가지 짚고 넘어가야되는 것은 `initial->idx`는 조작을 하지 않아도 코드 흐름상 idx의 값을 빼주는 부분이 있어서 괜찮을것 같았다. 하지만 바이너리의 첫번째 `cxafct`가 호출되는 순간 조작된 값이 다른 변수에 영향을 주면서 참조할 수 없는 주소를 가리키게 되면서 바이너리가 죽는 현상이 계속 발견됬다.
+
+`cxa_finialize` 함수에서 계속 에러가 떴었는데, 이것도 한번 분석해볼 예정이다.
+
+아무튼 그래서 `initial->next`와 `initial->idx` 둘다 조작을 진행해서 while문을 돌지 않고 바로 `free`함수를 호출하게끔 익스를 진행했다.
 
 
 ## slv.py
