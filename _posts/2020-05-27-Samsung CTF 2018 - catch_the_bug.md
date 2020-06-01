@@ -455,13 +455,44 @@ case ef_cxa:
 
 ... 그렇다. 바이너리를 실행할때 마다 커널에서 주는 난수 `pointer_guard`를 가지고 xor연산을 한다. 이 문제에서는 `pointer_guard`의 값을 알아내는 방법이 없으므로 `f->func.cxa.fn`을 사용하여 익스를 진행하는 것은 문제가 있다.
 
-뭐 결론적으로 이렇게 `__free_hook`의 값과 `initial->next`, `initial->idx`의 값을 조작해주면 쉘을 얻을 수 있다. 한 가지 짚고 넘어가야되는 것은 `initial->idx`는 조작을 하지 않아도 코드 흐름상 idx의 값을 빼주는 부분이 있어서 괜찮을것 같았다. 하지만 바이너리의 첫번째 `cxafct`가 호출되는 순간 조작된 값이 다른 변수에 영향을 주면서 참조할 수 없는 주소를 가리키게 되면서 바이너리가 죽는 현상이 계속 발견됬다.
+뭐 결론적으로 이렇게 `__free_hook`의 값과 `initial->next`, `initial->idx`의 값을 조작해주면 쉘을 얻을 수 있다. 한 가지 짚고 넘어가야되는 것은 `initial->idx`는 조작을 하지 않아도 코드 흐름상 `ef_cxa` case에서 `cxafct` 함수를 실행한 후, `cur->idx`의 값이 0이 되면서 while문을 빠져나가 `free(cur)`이 실행될줄 알았다. 하지만 `cxafct`가 호출되는 순간 `intial`의 조작된 값이 다른 변수에 영향을 주면서 참조할 수 없는 주소를 가리키게 되면서 바이너리가 죽는 현상이 계속 발견됬다.
 
-`cxa_finialize` 함수에서 계속 에러가 떴었는데, 이것도 한번 분석해볼 예정이다.
+`__cxa_finialize` 함수에서 segmentation fault 에러가 계속 떠서 분석해보니
 
-아무튼 그래서 `initial->next`와 `initial->idx` 둘다 조작을 진행해서 while문을 돌지 않고 바로 `free`함수를 호출하게끔 익스를 진행하면 된다.
+`cxa_finialize.c`
 
-(위에서 언급했다시피 쉘은 못땄다.. libc 버전이 2.26이 아니여서 onegadget 조건을 충족하지 못한것 같당..)
+```c
+void
+__cxa_finalize (void *d)
+{
+  struct exit_function_list *funcs;
+  __libc_lock_lock (__exit_funcs_lock);
+ restart:
+  for (funcs = __exit_funcs; funcs; funcs = funcs->next)
+    {
+      struct exit_function *f;
+      for (f = &funcs->fns[funcs->idx - 1]; f >= &funcs->fns[0]; --f)
+        if ((d == NULL || d == f->func.cxa.dso_handle) && f->flavor == ef_cxa)
+          {
+            const uint64_t check = __new_exitfn_called;
+            void (*cxafn) (void *arg, int status) = f->func.cxa.fn;
+            void *cxaarg = f->func.cxa.arg;
+			
+			.
+			.
+			.
+
+```
+
+여기서 `restart:` 바로 아래의 for문을 살펴보면 `funcs` 변수의 초기화를 `__exit_funcs`으로 해주는데 해당 값은 `initial`을 담고 있기 때문에 결국에 `funcs`변수에 조작된 `initial->next`의 값이 들어가게 되면서 참조할 수 없는 주소를 참조하게 된다.
+
+따라서 해당 익스를 진행할때 `initial->next`와 `initial->idx` 둘다 조작을 진행해서 while문을 돌지 않고 바로 `free`함수를 호출하게끔 익스를 진행하거나 `intial->fns[--cur->idx]->flavor`의 값을 조작해서 `ef_cxa` case에 들어가지 못하게 만들어주면 되겠다.
+
+필자는 첫번째 방법으로 익스를 진행했지만 위에서 언급했다시피 쉘은 따지 못했다.
+
+~~정말 찝찝하다..~~
+
+(libc 버전이 2.26이 아니여서 onegadget 조건을 충족하지 못했다..)
 
 ## slv.py
 
