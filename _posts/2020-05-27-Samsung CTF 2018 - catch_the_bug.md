@@ -5,14 +5,14 @@ categories:
 tags: arbitrary_write, exit, free_hook, pwn
 ---
 
-- Intruction
+- Introduction
 - Vunlnerability
 - Exploit
 - slv.py
 - 느낀 점
 - Reference
 
-## Intruction
+## Introduction
 
 언제부터였는지는 모르겠지만 CTF 동향이 malloc을 사용하는 문제에서 malloc을 직접적으로 사용하지 않고 다른 함수 내부에서 사용하는 것을 이용하는것을 봤는데..
 

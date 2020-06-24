@@ -5,7 +5,7 @@ categories:
 tags: javascript_engine, javascript, browser, pwn, compiler
 ---
 
-- Intruction
+- Introduction
 - Vunlnerability
 - Exploit
 - slv.py
