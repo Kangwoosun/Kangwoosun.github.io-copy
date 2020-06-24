@@ -626,18 +626,18 @@ _int_malloc (mstate av, size_t bytes)
 }
 ```
 
-위의 코드를 보면 `retrun_cached`가 0이면 안되고 tcache를 리턴해주는 `tcache_get` 함수의 호출이 `fastbin`, `smallbin`, `unsortedbin`을 다 돌면서 조건이 안맞을 경우에 뒷부분에서 할당하는 것을 볼 수 있다.
+위의 코드를 보면 `return_cached`가 0이면 안되고 1이어야 `tcache_get`을 호출한다. 게다가 tcache를 리턴해주는 `tcache_get` 함수의 호출이 `fastbin`, `smallbin`, `unsortedbin`을 다 돌면서 조건이 안맞을 경우에 뒷부분에서 할당하는 것을 볼 수 있다.
 
-문제의 조건에서 heap할당을 3개밖에 못하는것을 감안했을때 `calloc`을 통해 tcache를 할당할 수 있는 방법이 없었다는 것을 확인할 수 있었다.
+for문에서 `return_cached`를 1로 만들어주고 다른 bin에서 할당받지 않게끔 `unsortedbin`과 기타 chunk들의 조건을 맞춰줘야되는데 바이너리에서 heap할당을 3개밖에 못하는것을 감안했을때 `calloc`을 통해 tcache를 할당할 수 있는 방법이 없었다는 것을 확인할 수 있었다. (다른 write up을 확인해볼 예정 능력부족일 수도 있음.)
 
-필자는 `calloc`내부를 분석해서 `_int_malloc`이 나오길래 `_int_malloc`을 분석해서 `tcache`를 리턴하게 되는 조건을 찾아서 진행하는 줄 알았다가 롸업보고 뒤통수 맞은 느낌이었다..
+필자는 `calloc`내부를 분석해서 `_int_malloc`이 나오길래 또 변태 문제마냥 `_int_malloc`을 분석해서 `tcache`를 리턴하게 되는 특정 조건을 찾는 문제인줄 알아서 삽질을 하다가 롸업보고 뒤통수 맞은 느낌이었다..
 
 
 ## 느낀 점
 
 개인적으로 이 문제 풀면서 지렸던 점을 꼽자면 
 
-첫번째로 `fasbin unlink attack`으로 익스 진행했다는 점
+첫번째로 `fasbin unlink attack`으로 익스 진행했다는 점 (지금 와서 생각해보면 그렇게 충격적이진 않았는데 처음에 봤을때는..)
 
 두번째로 `lock` 주소에서 할당받기 전에 2번째 list를 delete해서 0x7f gadget은 사용하면서 list자리까지 사용하는 부분..
 
