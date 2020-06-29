@@ -13,7 +13,7 @@ tags: rsa, crypto
 
 ## Introduction
 
-TokyoWesterns 2019 문제 중에 정말 쉬울것같은 rsa 문제가 있길래 건들여봤다.
+TokyoWesterns 2019 문제 중에 정말 쉬울것같은 rsa 문제가 있길래 건드려봤다.
 
 ## Vunlnerability
 
