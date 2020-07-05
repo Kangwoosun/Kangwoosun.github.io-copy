@@ -4,8 +4,22 @@ categories:
  - pwnable
 tags: pwn, scanf, malloc, heap
 ---
-
 - Introduction
+- Vunlnerability
+- Exploit
+- slv.py
+- 느낀 점
+- Reference
+
+## Introduction
+
+2019년 12월쯤에 쓰다만 롸업을 보안 및 내부 원리 등등을 분석하면서 다시 포스팅한다.. 예전 롸업은 
+
+- [https://kws981024.tistory.com](https://kws981024.tistory.com)
+
+에 있긴 한데 비밀글로 되어있어서 아마 보진 못할것이다.
+
+아직 포스팅중...('20.07.05)
 
 ```
 main (0x84a)
@@ -28,8 +42,8 @@ main (0x84a)
     exit(0)
 
 ```
-- Exploit
-- slv.py
+## Exploit
+## slv.py
 
 ```python
 from pwn import *
@@ -114,7 +128,7 @@ def main():
 if __name__ == '__main__':
     main()
 ```
-- 느낀 점
-- Reference
+## 느낀 점
+## Reference
 
 
