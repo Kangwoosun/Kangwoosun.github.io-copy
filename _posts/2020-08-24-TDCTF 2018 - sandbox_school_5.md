@@ -15,6 +15,9 @@ tags: shellcode, seccomp, sandbox, sandbox_escape
 
 ## Introduction
 
+TDCTF 2018이 cloud폴더에 있길래..(?) 풀었다. ~~언제 넣어놨지;~~
+드림핵에서 봤던 sandbox escape 기법이 생각나서 참고하면서 풀게 되었다.
+
 
 ## Vunlnerability
 
@@ -111,6 +114,7 @@ int main()
 
 ```
 
+`seccomp`자체에 취약점이 있었다.
 
 
 ## Exploit
@@ -746,8 +750,9 @@ if (READ_ONCE(ti->flags) & _TIF_WORK_SYSCALL_ENTRY)
 ```
 여기서 `nr &= __SYSCALL_MASK` 때문에 취약점이 발생한다. `__SYSCALL_MASK`의 값은 ~(0x40000000)이다.
 
-근데 여기서 제일 처음 유저모드에서 syscall을 호출할때 rax값에 (호출하려는 syscall number | 0x40000000)을 넣어주게 되면 `syscall_trace_enter`의 필터링은 통과하고 `syscall_return_slowpath`을 호출할때는 제대로 된 syscall number가 들어가게 되서 `seccomp`필터링을 우회할 수 있다.
+근데 여기서 제일 처음 유저모드에서 syscall을 호출할때 rax값에 (호출하려는 syscall number `or연산` 0x40000000)을 넣어주게 되면 `syscall_trace_enter`의 필터링은 통과하고 `syscall_return_slowpath`을 호출할때는 제대로 된 syscall number가 들어가게 되서 `seccomp`필터링을 우회할 수 있다.
 
+사실 `if(likely(nr < NR_syscalls))`구문을 추가해서 최신 커널버전에서는 취약점 패치를 했다고 생각했는데 취약점과 상관없는 if문이였고 `syscall_trace_enter`의 에러를 탐지하는 정도인것같다.
 
 ## slv.py
 
@@ -757,6 +762,8 @@ if (READ_ONCE(ti->flags) & _TIF_WORK_SYSCALL_ENTRY)
 
 ## 느낀 점
 
+역시 커널을 뜯어보고 커널 디버깅도 해야되겠다는걸 다시금 느낀다.
+요새 알고리즘을 공부한답시고 공부를 너무 안해서 다시 공부모드로 돌아가야겠다. ~~말년이라 더 공부안되쥬~~
 
 
 ## Reference
