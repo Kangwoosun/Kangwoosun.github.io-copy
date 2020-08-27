@@ -828,7 +828,6 @@ nop
 p.sendlineafter('> ', payload)
 
 p.interactive()
-
 ```
 
 
