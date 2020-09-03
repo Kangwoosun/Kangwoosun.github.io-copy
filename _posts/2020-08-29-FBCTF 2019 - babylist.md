@@ -124,14 +124,18 @@ vector<bool, _Allocator>::reserve(size_type __n)
 
 그 후 똑같이 0x90까지 할당 받은 후에 똑같이 `Duplicate`로 얻은 list에 추가를 계속 하다보면 기존 list의 fd에 해당 chunk의 주소가 덮어지게 된다.
 
+~~사실 이거는 분석 해봐야되는데... ㅎㅎ;;~~
+
 나머지는 순조롭게 진행했다. 참고로 one_gadget으로 하다보면 피를 볼 수 있으므로 정직하게 `system('/bin/sh')`를 실행시키도록 하자..
 
-~~사실 이거를 분석을 해봐야되는데... ㅎㅎ;;~~
+
 
 
 ## slv.py
 
-```pythonimport struct
+```python
+
+import struct
 from pwn import *
 
 p = process('./babylist')
