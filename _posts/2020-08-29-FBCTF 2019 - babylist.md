@@ -237,6 +237,7 @@ if __name__ == '__main__':
 libc_leak은 성공..(20.08.31)
 exploit 절반 성공... rsp를 0x10으로 aligned 시켜줘야됨 ~~개빡치네 진짜로~~(20.09.1)
 one_gadget의 조건을 맞추지 못하고 있음..
+one_gadget 포기, system('/bin/sh')로 전향... 왜 안풀리냐...(20.09.03)
 
 ## 느낀 점
 
