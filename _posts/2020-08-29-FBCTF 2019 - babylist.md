@@ -2,7 +2,7 @@
 title: FBCTF 2019 - babylist
 categories:
  - pwnable
-tags: cpp
+tags: cpp, tcache, heap, tcache_poisoning
 ---
 
 ```sh
