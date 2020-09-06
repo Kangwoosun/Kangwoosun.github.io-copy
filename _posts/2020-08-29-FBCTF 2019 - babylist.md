@@ -126,6 +126,14 @@ vector<bool, _Allocator>::reserve(size_type __n)
 
 ~~사실 이거는 분석 해봐야되는데... ㅎㅎ;;~~
 
++++ '20.09.06
+
+생각해보니까 동일한 chunk에 동일한 fd가 입력되는게 당연했다.. 기존 list와 `Duplicate`로 얻은 list가 같은 주소의 chunk를 가리키고 있기때문에 
+
+먼저 element를 추가한 list가 해당 chunk를 free하고 그 후 element를 추가한 list가 동일한 chunk를 다시 free하기 때문에 해당 chunk의 주소가 fd에 설정되는것은 당연했다.
+
++++
+
 나머지는 순조롭게 진행했다. 참고로 one_gadget으로 하다보면 피를 볼 수 있으므로 정직하게 `system('/bin/sh')`를 실행시키도록 하자..
 
 
@@ -309,7 +317,7 @@ if __name__ == '__main__':
 ## 느낀 점
 
 1. vector 소스코드 분석을 좀 진행해봐야겠다.
-2. 해당 chunk의 fd가 왜 저렇게 덮어지는지 분석해봐야겠다.
+2. 해당 chunk의 fd가 왜 저렇게 덮어지는지 분석해봐야겠다. (해결 완료)
 3. C++ 문제를 좀 많이 풀어봐야겠다.
 
 ## Reference
