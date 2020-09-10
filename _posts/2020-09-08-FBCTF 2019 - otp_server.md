@@ -28,6 +28,7 @@ Spec: cipher((4 byte nonce) | message | (4 byte nonce))
 ## Introduction
 
  FBCTF 2019에 있길래 풀어봄...
+ 09.10... 하기 너무싫다.
 
 ## Vunlnerability
 
