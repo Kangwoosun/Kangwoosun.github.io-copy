@@ -1,5 +1,5 @@
 ---
-title: FBCTF 2019 - r4nk
+title: FBCTF 2019 - otp_server
 categories:
  - pwnable
 tags: otp, pwn
