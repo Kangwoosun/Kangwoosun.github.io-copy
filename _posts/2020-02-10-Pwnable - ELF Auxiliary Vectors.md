@@ -216,11 +216,6 @@ void main(int argc, char* argv[], char* envp[])
 
 # Reference
 
-```
-https://umbum.tistory.com/439
-https://nekoplu5.tistory.com/206
-http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-```
-
-
-포스팅중..(20.02.18)
+- [https://umbum.tistory.com/439](https://umbum.tistory.com/439)
+- [https://nekoplu5.tistory.com/206](https://nekoplu5.tistory.com/206)
+- [http://articles.manugarg.com/aboutelfauxiliaryvectors.html](http://articles.manugarg.com/aboutelfauxiliaryvectors.html)

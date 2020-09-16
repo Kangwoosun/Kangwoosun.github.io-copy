@@ -11,3 +11,6 @@ tags: kernel, computer architecture, leak, cache, race condition
 
 사실 CTF문제를 계속 풀어야되는데 진짜.. 너무 의욕이 안나서 도피겸 논문 읽고 정리하는 시간을 갖기 위해 포스팅한다.
 
+# Reference
+
+- [https://meltdownattack.com/meltdown.pdf](https://meltdownattack.com/meltdown.pdf)
