@@ -44,7 +44,7 @@ int main(){
 
 ```
 
-linux 64bit
+gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 64bit
     
     0x00000000004005c7 <+0>:     push   rbp
     0x00000000004005c8 <+1>:     mov    rbp,rsp
@@ -84,7 +84,7 @@ linux 64bit
     0x0000000000400646 <+127>:   ret   
     
 
-linux 32bit
+gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 32bit
     
     0x080484d6 <+0>:     lea    ecx,[esp+0x4]
     0x080484da <+4>:     and    esp,0xfffffff0
@@ -159,8 +159,20 @@ linux 32bit
 ```
 
 edx = (0x66666667 * input) / 0x100000000
-
-
 eax = (0x66666667 * input) & 0xffffffff
 
-adding green tea
+input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f) * 6
+
+
+
+
+사무실에서 VS 2015로 동일하게 소스코드 구성해서 진행해본 결과 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
+
+
+#Reference
+
+- [https://en.wikipedia.org/wiki/Modulo_operation](https://en.wikipedia.org/wiki/Modulo_operation)
+- [https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible](https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible)
+
+
+
