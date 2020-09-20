@@ -174,6 +174,7 @@ input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f) * 6
 
 - [https://en.wikipedia.org/wiki/Modulo_operation](https://en.wikipedia.org/wiki/Modulo_operation)
 - [https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible](https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible)
-
+- [http://www.openrce.org/blog/view/892/function.session-start](http://www.openrce.org/blog/view/892/function.session-start)
+- [http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf](http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf)
 
 
