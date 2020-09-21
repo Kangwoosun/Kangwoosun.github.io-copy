@@ -170,6 +170,133 @@ input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f) * 6
 사무실에서 VS 2015로 동일하게 소스코드 구성해서 진행해본 결과 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
 
 
+```cpp
+#include <iostream>
+using namespace std;
+
+int main(){
+	
+	int input, modulo;
+	cin >> input >> modulo;
+	
+	input = input % modulo;
+
+	cout << input << endl;
+
+	return 0;
+}
+
+
+   0x0000000000400817 <+0>:     push   rbp
+   0x0000000000400818 <+1>:     mov    rbp,rsp
+   0x000000000040081b <+4>:     sub    rsp,0x10
+   0x000000000040081f <+8>:     mov    rax,QWORD PTR fs:0x28
+   0x0000000000400828 <+17>:    mov    QWORD PTR [rbp-0x8],rax
+   0x000000000040082c <+21>:    xor    eax,eax
+   0x000000000040082e <+23>:    lea    rax,[rbp-0x10]
+   0x0000000000400832 <+27>:    mov    rsi,rax
+   0x0000000000400835 <+30>:    lea    rdi,[rip+0x200944]        # 0x601180 <std::cin@@GLIBCXX_3.4>
+   0x000000000040083c <+37>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
+   0x0000000000400841 <+42>:    mov    rdx,rax
+   0x0000000000400844 <+45>:    lea    rax,[rbp-0xc]
+   0x0000000000400848 <+49>:    mov    rsi,rax
+   0x000000000040084b <+52>:    mov    rdi,rdx
+   0x000000000040084e <+55>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
+   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
+   0x0000000000400859 <+66>:    cdq    
+   0x000000000040085a <+67>:    idiv   ecx
+   0x000000000040085c <+69>:    mov    eax,edx
+   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
+   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400864 <+77>:    mov    esi,eax
+   0x0000000000400866 <+79>:    lea    rdi,[rip+0x2007f3]        # 0x601060 <std::cout@@GLIBCXX_3.4>
+   0x000000000040086d <+86>:    call   0x400720 <std::ostream::operator<<(int)@plt>
+   0x0000000000400872 <+91>:    mov    rdx,rax
+   0x0000000000400875 <+94>:    mov    rax,QWORD PTR [rip+0x200764]        # 0x600fe0
+   0x000000000040087c <+101>:   mov    rsi,rax
+   0x000000000040087f <+104>:   mov    rdi,rdx
+   0x0000000000400882 <+107>:   call   0x4006f0 <std::ostream::operator<<(std::ostream& (*)(std::ostream&))@plt>
+   0x0000000000400887 <+112>:   mov    eax,0x0
+   0x000000000040088c <+117>:   mov    rcx,QWORD PTR [rbp-0x8]
+   0x0000000000400890 <+121>:   xor    rcx,QWORD PTR fs:0x28
+   0x0000000000400899 <+130>:   je     0x4008a0 <main+137>
+   0x000000000040089b <+132>:   call   0x400700 <__stack_chk_fail@plt>
+   0x00000000004008a0 <+137>:   leave  
+   0x00000000004008a1 <+138>:   ret    
+   
+   
+   
+   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
+   0x0000000000400859 <+66>:    cdq    
+   0x000000000040085a <+67>:    idiv   ecx
+   0x000000000040085c <+69>:    mov    eax,edx
+   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
+   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400864 <+77>:    mov    esi,eax
+   
+```
+
+
+
+`http://www.openrce.org/blog/view/892/function.session-start`에서 찾아보니
+```
+couple of things to remember:
+Compilers love to work with multiples of 2. The processor can can just shift registers left and right (shifting is incredibly fast, that is moving the contents of a register left or right padding with o or 1 as appropriate). Shifting to the left for multiplication by 2 and towards the right for division by 2 (this is akin to having a number in base 10 and multiplying by 10 by adding zeros to the right and dividing by by removing the rightmost digit).
+Compilers hate to use the division instruction. The division takes a lot of steps, or cycles, for the CPU to complete. Hence they will avoid to use it at all cost.
+
+The code looked like this:
+(irrelevant interleaved code left out)
+
+mov ecx, [esp+4+arg_4]
+mov eax, 66666667h
+imul ecx
+sar edx, 3
+
+
+In the snippet we can see function argument being multiplied by 0x66666667, and the result being stored as a 64 bit value in EDX:EAX (topmost 32 bits in EDX, the lower 32 in EAX)
+Then the top 32 bits are shifted ("arithmetically") to the right. That is, divided by 2 thrice, same as 2^3 = 8. Effectively dividing the value by 8.
+But the division is applied only to the top 32 bits, ignoring the lower 32. That could be understood to also mean that, by taking the topmost 32 bits and ignoring the bottom ones, the result of the multiplication is implicitly being divided by 2^32. (Thats only guessed by the subsequent usage of the value just obtained, theres never again a reference to the lower 32bits, so I assume that they are discarded)
+
+
+What do we have so far?
+
+[ (Value * 0x66666667) / 2^32 ] / 2^3 ]
+
+But, whats that 0x66666667? why to multiply by something so large and then divide?
+The reason is that such computation allows the processor to keep most of the precision of the division it is trying to perform, still obtaining an integer in the end but without having to resort to using floating point arithmetic (which is far slower)
+
+Lets do an example in base 10. Imagine that you only can multiply and divide by 10 (shifting numbers left and right) and we want to divide a number by 30. By shifting we can only divide by 10, 100, 1000, etc
+
+But we have that: Value/30 = value * 1/3 * 1/10
+
+Given that, represented as an integer, 1/3 would produce 0 we can "scale" it by multiplying by a large constant that later, once we are done, we divide by to get the value were after. Given that the easiest for us is to multiply/divide by 10, we can "scale" 1/3 and make it 100000/3 which approximately equals 33333, which is a nice integer value. We would want to make this value as large as it fits in our registers in order to be as precise as possible. The bigger it is the more precision it will retain for subsequent operations.
+
+Value/30 = ( Value*33333 ) / 1000000
+
+Hence, we now have a clue now of where that 0x66666667 value might be coming from. Given that the processor works in base 2. We can assume that its going to prefer multiples of 2. Also, given that it will try to obtain the largest value that fits in a 32bit register, that gives us an idea of the range of the power-of-two in use. We can get there with a bit of trial and error (We want to obtain an integer as a result of dividing a power of two by 0x66666667).
+
+2.0^33/0x66666667 = 4.9999999982537702 ~= 5
+
+Therefore:
+
+0x66666667 ~= 2^33/5
+
+So, in the end we get to
+
+( [ (Value * 2^33)/5] /2^32 ) / 2^3
+
+And with some algebra it simplifies to:
+
+Value / (5*2^2) = Value/20
+
+Effectively dividing the value by 20, without actually using the division instruction. Thats to the extent that compilers will go to avoid using the division instruction...
+
+```
+진짜 귀찮다.. ㅋㅋㅋ 전역하자..!
+
+
 #Reference
 
 - [https://en.wikipedia.org/wiki/Modulo_operation](https://en.wikipedia.org/wiki/Modulo_operation)
