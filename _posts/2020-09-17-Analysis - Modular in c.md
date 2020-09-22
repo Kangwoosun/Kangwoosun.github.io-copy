@@ -297,6 +297,8 @@ Effectively dividing the value by 20, without actually using the division instru
 ```
 진짜 귀찮다.. ㅋㅋㅋ 전역하자..!
 
+정리를 하자면 2.0^33/0x66666667 = 4.9999999982537702 ~= 5 이기때문에
+
 0x66666667 ~= 2^33/5
 
 
@@ -313,6 +315,11 @@ input - (input * 2 / 5 / 2^2) - (input >> 0x1f) * 6
 
 
 input - (((input / 10)(버림) - (input >> 0x1f))) * 10
+
+
+
+
+‭-2,147,48648
 
 
 #Reference
