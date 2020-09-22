@@ -161,7 +161,8 @@ gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 32bit
 edx = (0x66666667 * input) / 0x100000000
 eax = (0x66666667 * input) & 0xffffffff
 
-input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f) * 6
+input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 6
+
 
 
 
@@ -296,6 +297,23 @@ Effectively dividing the value by 20, without actually using the division instru
 ```
 진짜 귀찮다.. ㅋㅋㅋ 전역하자..!
 
+0x66666667 ~= 2^33/5
+
+
+edx = (0x66666667 * input) / 0x100000000
+eax = (0x66666667 * input) & 0xffffffff
+
+input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 6
+
+
+input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 0x1f) * 6
+
+input - (input * 2 / 5 / 2^2) - (input >> 0x1f) * 6
+
+
+
+input - (((input / 10)(버림) - (input >> 0x1f))) * 10
+
 
 #Reference
 
@@ -303,5 +321,4 @@ Effectively dividing the value by 20, without actually using the division instru
 - [https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible](https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible)
 - [http://www.openrce.org/blog/view/892/function.session-start](http://www.openrce.org/blog/view/892/function.session-start)
 - [http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf](http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf)
-
-
+- [https://www.hex-rays.com/blog/reading-assembly-code](https://www.hex-rays.com/blog/reading-assembly-code)
