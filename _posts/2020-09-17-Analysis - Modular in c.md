@@ -18,7 +18,7 @@ tags: analysis, c, reversing
 
 ida가 없는 환경에서 peda로 리버싱을 하면서 종종 희안한 연산을 하는 경우가 보였다. 
 
-나중에 알고보니 나머지 연산을 하는 작업인것을 알게되었고 분석을 해보자고 결심하다가 지금 와서야 진행한다.
+나중에 알고보니 modulo, 즉 나머지 연산을 하는 작업인것을 알게되었고 분석을 해보자고 결심하다가 지금 와서야 진행한다.
 
 
 # Analysis
@@ -168,78 +168,6 @@ input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 6
 
 
 
-사무실에서 VS 2015로 동일하게 소스코드 구성해서 진행해본 결과 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
-
-
-```cpp
-#include <iostream>
-using namespace std;
-
-int main(){
-	
-	int input, modulo;
-	cin >> input >> modulo;
-	
-	input = input % modulo;
-
-	cout << input << endl;
-
-	return 0;
-}
-
-
-   0x0000000000400817 <+0>:     push   rbp
-   0x0000000000400818 <+1>:     mov    rbp,rsp
-   0x000000000040081b <+4>:     sub    rsp,0x10
-   0x000000000040081f <+8>:     mov    rax,QWORD PTR fs:0x28
-   0x0000000000400828 <+17>:    mov    QWORD PTR [rbp-0x8],rax
-   0x000000000040082c <+21>:    xor    eax,eax
-   0x000000000040082e <+23>:    lea    rax,[rbp-0x10]
-   0x0000000000400832 <+27>:    mov    rsi,rax
-   0x0000000000400835 <+30>:    lea    rdi,[rip+0x200944]        # 0x601180 <std::cin@@GLIBCXX_3.4>
-   0x000000000040083c <+37>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
-   0x0000000000400841 <+42>:    mov    rdx,rax
-   0x0000000000400844 <+45>:    lea    rax,[rbp-0xc]
-   0x0000000000400848 <+49>:    mov    rsi,rax
-   0x000000000040084b <+52>:    mov    rdi,rdx
-   0x000000000040084e <+55>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
-   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
-   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
-   0x0000000000400859 <+66>:    cdq    
-   0x000000000040085a <+67>:    idiv   ecx
-   0x000000000040085c <+69>:    mov    eax,edx
-   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
-   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
-   0x0000000000400864 <+77>:    mov    esi,eax
-   0x0000000000400866 <+79>:    lea    rdi,[rip+0x2007f3]        # 0x601060 <std::cout@@GLIBCXX_3.4>
-   0x000000000040086d <+86>:    call   0x400720 <std::ostream::operator<<(int)@plt>
-   0x0000000000400872 <+91>:    mov    rdx,rax
-   0x0000000000400875 <+94>:    mov    rax,QWORD PTR [rip+0x200764]        # 0x600fe0
-   0x000000000040087c <+101>:   mov    rsi,rax
-   0x000000000040087f <+104>:   mov    rdi,rdx
-   0x0000000000400882 <+107>:   call   0x4006f0 <std::ostream::operator<<(std::ostream& (*)(std::ostream&))@plt>
-   0x0000000000400887 <+112>:   mov    eax,0x0
-   0x000000000040088c <+117>:   mov    rcx,QWORD PTR [rbp-0x8]
-   0x0000000000400890 <+121>:   xor    rcx,QWORD PTR fs:0x28
-   0x0000000000400899 <+130>:   je     0x4008a0 <main+137>
-   0x000000000040089b <+132>:   call   0x400700 <__stack_chk_fail@plt>
-   0x00000000004008a0 <+137>:   leave  
-   0x00000000004008a1 <+138>:   ret    
-   
-   
-   
-   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
-   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
-   0x0000000000400859 <+66>:    cdq    
-   0x000000000040085a <+67>:    idiv   ecx
-   0x000000000040085c <+69>:    mov    eax,edx
-   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
-   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
-   0x0000000000400864 <+77>:    mov    esi,eax
-   
-```
-
-
 
 `http://www.openrce.org/blog/view/892/function.session-start`에서 찾아보니
 ```
@@ -340,6 +268,80 @@ input - (((input / 10)(버림) - (input / 2^31))) * 10
 
 ‭-2,147,48648
 
+
+
+
+
+사무실에서 VS 2015로 동일하게 소스코드 구성해서 진행해본 결과 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
+
+
+```cpp
+#include <iostream>
+using namespace std;
+
+int main(){
+	
+	int input, modulo;
+	cin >> input >> modulo;
+	
+	input = input % modulo;
+
+	cout << input << endl;
+
+	return 0;
+}
+
+
+   0x0000000000400817 <+0>:     push   rbp
+   0x0000000000400818 <+1>:     mov    rbp,rsp
+   0x000000000040081b <+4>:     sub    rsp,0x10
+   0x000000000040081f <+8>:     mov    rax,QWORD PTR fs:0x28
+   0x0000000000400828 <+17>:    mov    QWORD PTR [rbp-0x8],rax
+   0x000000000040082c <+21>:    xor    eax,eax
+   0x000000000040082e <+23>:    lea    rax,[rbp-0x10]
+   0x0000000000400832 <+27>:    mov    rsi,rax
+   0x0000000000400835 <+30>:    lea    rdi,[rip+0x200944]        # 0x601180 <std::cin@@GLIBCXX_3.4>
+   0x000000000040083c <+37>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
+   0x0000000000400841 <+42>:    mov    rdx,rax
+   0x0000000000400844 <+45>:    lea    rax,[rbp-0xc]
+   0x0000000000400848 <+49>:    mov    rsi,rax
+   0x000000000040084b <+52>:    mov    rdi,rdx
+   0x000000000040084e <+55>:    call   0x4006d0 <std::istream::operator>>(int&)@plt>
+   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
+   0x0000000000400859 <+66>:    cdq    
+   0x000000000040085a <+67>:    idiv   ecx
+   0x000000000040085c <+69>:    mov    eax,edx
+   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
+   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400864 <+77>:    mov    esi,eax
+   0x0000000000400866 <+79>:    lea    rdi,[rip+0x2007f3]        # 0x601060 <std::cout@@GLIBCXX_3.4>
+   0x000000000040086d <+86>:    call   0x400720 <std::ostream::operator<<(int)@plt>
+   0x0000000000400872 <+91>:    mov    rdx,rax
+   0x0000000000400875 <+94>:    mov    rax,QWORD PTR [rip+0x200764]        # 0x600fe0
+   0x000000000040087c <+101>:   mov    rsi,rax
+   0x000000000040087f <+104>:   mov    rdi,rdx
+   0x0000000000400882 <+107>:   call   0x4006f0 <std::ostream::operator<<(std::ostream& (*)(std::ostream&))@plt>
+   0x0000000000400887 <+112>:   mov    eax,0x0
+   0x000000000040088c <+117>:   mov    rcx,QWORD PTR [rbp-0x8]
+   0x0000000000400890 <+121>:   xor    rcx,QWORD PTR fs:0x28
+   0x0000000000400899 <+130>:   je     0x4008a0 <main+137>
+   0x000000000040089b <+132>:   call   0x400700 <__stack_chk_fail@plt>
+   0x00000000004008a0 <+137>:   leave  
+   0x00000000004008a1 <+138>:   ret    
+   
+   
+   
+   0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
+   0x0000000000400859 <+66>:    cdq    
+   0x000000000040085a <+67>:    idiv   ecx
+   0x000000000040085c <+69>:    mov    eax,edx
+   0x000000000040085e <+71>:    mov    DWORD PTR [rbp-0x10],eax
+   0x0000000000400861 <+74>:    mov    eax,DWORD PTR [rbp-0x10]
+   0x0000000000400864 <+77>:    mov    esi,eax
+   
+```
 
 #Reference
 
