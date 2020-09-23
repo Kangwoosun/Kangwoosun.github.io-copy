@@ -297,27 +297,46 @@ Effectively dividing the value by 20, without actually using the division instru
 ```
 진짜 귀찮다.. ㅋㅋㅋ 전역하자..!
 
-정리를 하자면 2.0^33/0x66666667 = 4.9999999982537702 ~= 5 이기때문에
+정리를 하자면 `2.0^33/0x66666667 = 4.9999999982537702 ~= 5` 이기때문에 `0x66666667 ~= 2^33/5`이 된다.
 
-0x66666667 ~= 2^33/5
+이를 만들어본 소스코드에 적용해보면 양수의 경우에
+
+`input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 10`
+
+= `input - ((((input * 2^33/5) / 2^32) / 2^2) - (input / 2^31) * 10`
+
+= `input - ((input / 10)(버림) - (input / 2^31)) * 10`
+
+로 양수의 경우에는 `input / 2^31`값이 0이 되므로 실질적으로 `input - ((input / 10)(버림)) * 10`로 동작한다.
+
+이는 input에 input을 10으로 나누고 10으로 곱한 값을 빼서 `input = input % 10` 코드를 수행하게 된다.
+
+이번에는 음수의 경우를 살펴보도록 하자.
+
+
+
 
 
 edx = (0x66666667 * input) / 0x100000000
 eax = (0x66666667 * input) & 0xffffffff
 
-input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 6
+input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 10
 
 
-input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 0x1f) * 6
+input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 0x1f) * 10
 
-input - (input * 2 / 5 / 2^2) - (input >> 0x1f) * 6
-
-
-
-input - (((input / 10)(버림) - (input >> 0x1f))) * 10
+input - (input * 2 / 5 / 2^2) - (input >> 0x1f) * 10
 
 
 
+input - (((input / 10)(버림) - (input / 2^31))) * 10
+
+
+추가적으로 `http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf`에서 보면 3으로 나눌때는 0x55555556, 5로 나눌때는 0x66666667, 7로 나눌때는 0x92492493같이
+
+각각 나누려는 수에 따라서 곱하는 상수가 달라짐을 볼 수 있었다. 이렇게 까지 하는 이유는 `https://www.hex-rays.com/blog/reading-assembly-code`에서 본거긴 한데
+
+`idiv`명령어를 사용하는 것보다 이렇게 계산을 진행하는 것이 더 빠르다고 한다.
 
 ‭-2,147,48648
 
