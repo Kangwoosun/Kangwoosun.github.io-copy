@@ -223,11 +223,10 @@ Value / (5*2^2) = Value/20
 Effectively dividing the value by 20, without actually using the division instruction. Thats to the extent that compilers will go to avoid using the division instruction...
 
 ```
-진짜 귀찮다.. ㅋㅋㅋ 전역하자..!
 
 정리를 하자면 `2.0^33/0x66666667 = 4.9999999982537702 ~= 5` 이기때문에 `0x66666667 ~= 2^33/5`이 된다.
 
-이를 만들어본 소스코드에 적용해보면 양수의 경우에
+이를 분석한 연산에 적용해보면
 
 `input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 10`
 
@@ -235,11 +234,28 @@ Effectively dividing the value by 20, without actually using the division instru
 
 = `input - ((input / 10)(버림) - (input / 2^31)) * 10`
 
-로 양수의 경우에는 `input / 2^31`값이 0이 되므로 실질적으로 `input - ((input / 10)(버림)) * 10`로 동작한다.
+이다. 그런데 여기서 `(input / 2^31)`로 해석한 부분은 사실 `sar  eax,0x1f` 이부분인데 eax에 input이 들어가게 된다.
+
+그런데 `sar` 명령어는 비트를 오른쪽으로 shift 시켜주는데 일반적인 shift랑 다른 점은 제일 상위의 부호비트를 보존시킨다.
+
+따라서 `sar  eax,0x1f`는 input이 양수일때는 0, 음수일때는 -1(0xffffffff)를 eax에 넣게 된다.
+
+위의 내용을 참고해서 양수의 경우를 살펴보면 `input / 2^31`값이 0이 되므로 실질적으로 `input - ((input / 10)(버림)) * 10`로 동작한다.
 
 이는 input에 input을 10으로 나누고 10으로 곱한 값을 빼서 `input = input % 10` 코드를 수행하게 된다.
 
-이번에는 음수의 경우를 살펴보도록 하자.
+음수의 경우에는 `input / 2^31` 값이 -1이 되면서 `input - (input / 10)(버림) + 1) * 10`를 수행한다.
+
+```
+    mov    edx,0x66666667
+    mov    eax,ecx
+    imul   edx
+    sar    edx,0x2
+```
+
+`sar edx,0x2` 연산을 할때 음수라 `sar`연산때 일반적인 shift 연산과 다르게 연산이 되버린다.
+
+따라서 +1을 해주는 것같다. ('20.09.25) 계속 알아볼 예정.
 
 
 
@@ -248,12 +264,12 @@ Effectively dividing the value by 20, without actually using the division instru
 edx = (0x66666667 * input) / 0x100000000
 eax = (0x66666667 * input) & 0xffffffff
 
-input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 10
+input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 31)) * 10
 
 
-input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 0x1f) * 10
+input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 31) * 10
 
-input - (input * 2 / 5 / 2^2) - (input >> 0x1f) * 10
+input - (input * 2 / 5 / 2^2) - (input >> 31) * 10
 
 
 
