@@ -253,27 +253,19 @@ Effectively dividing the value by 20, without actually using the division instru
     sar    edx,0x2
 ```
 
-`sar edx,0x2` 연산을 할때 음수라 `sar`연산때 일반적인 shift 연산과 다르게 연산이 되버린다.
+`(input/10)(버림)`으로 해석한 부분의 어셈블리 코드인데 여기서 `sar`연산은 음수를 연산할때 음의 방향으로 반올림을 해버린다.
+
+어차피 `sar`연산의 결과물의 소수점으로는 0.5밖에 나오질 않으니 사실상 올림이라고 봐도 무방하다. (`https://appleii.tistory.com/18`)
+
+이 때문에 음의 방향으로 올림된 값을 없애기 위해서 `sar  eax,0x1f`를 더해준것이라 볼 수 있다.
+
+그런데 여기서 궁금증이 하나 생길 수 있다.
+
+엥? 그러면 `(input / 10)(버림)`의 결과물이 짝수로 나오면 어떻게 되는건데?
+
+그러게..('20.09.25)
 
 따라서 +1을 해주는 것같다. ('20.09.25) 계속 알아볼 예정.
-
-
-
-
-
-edx = (0x66666667 * input) / 0x100000000
-eax = (0x66666667 * input) & 0xffffffff
-
-input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 31)) * 10
-
-
-input - ((((input * 2^33/5) / 2^32) / 2^2) - (input >> 31) * 10
-
-input - (input * 2 / 5 / 2^2) - (input >> 31) * 10
-
-
-
-input - (((input / 10)(버림) - (input / 2^31))) * 10
 
 
 추가적으로 `http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf`에서 보면 3으로 나눌때는 0x55555556, 5로 나눌때는 0x66666667, 7로 나눌때는 0x92492493같이
@@ -366,3 +358,4 @@ int main(){
 - [http://www.openrce.org/blog/view/892/function.session-start](http://www.openrce.org/blog/view/892/function.session-start)
 - [http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf](http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf)
 - [https://www.hex-rays.com/blog/reading-assembly-code](https://www.hex-rays.com/blog/reading-assembly-code)
+- [https://appleii.tistory.com/18](https://appleii.tistory.com/18)
