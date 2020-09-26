@@ -263,6 +263,10 @@ Effectively dividing the value by 20, without actually using the division instru
 
 엥? 그러면 `(input / 10)(버림)`의 결과물이 짝수로 나오면 어떻게 되는건데?
 
+-120, -121, -122 => -49
+
+-123, -124 => -50
+
 그러게..('20.09.25)
 
 따라서 +1을 해주는 것같다. ('20.09.25) 계속 알아볼 예정.
