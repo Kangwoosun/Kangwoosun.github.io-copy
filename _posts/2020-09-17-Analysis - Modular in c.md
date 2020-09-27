@@ -7,8 +7,6 @@ tags: analysis, c, reversing
 
 - Introduction
 - Analysis
-- Exploit
-- slv.py
 - 느낀 점
 - Reference
 
@@ -158,18 +156,16 @@ gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 32bit
     mov    edx,ecx
 ```
 
-edx = (0x66666667 * input) / 0x100000000
-eax = (0x66666667 * input) & 0xffffffff
+해당 어셈블리어를 연산으로 해석해보면
 
-input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 6
+`input - ((((0x66666667 * input) / 0x100000000) >> 2) - (input >> 0x1f)) * 10`
 
-
-
-
+정도로 나타낼 수 있겠다.
 
 
 
 `http://www.openrce.org/blog/view/892/function.session-start`에서 찾아보니
+
 ```
 couple of things to remember:
 Compilers love to work with multiples of 2. The processor can can just shift registers left and right (shifting is incredibly fast, that is moving the contents of a register left or right padding with o or 1 as appropriate). Shifting to the left for multiplication by 2 and towards the right for division by 2 (this is akin to having a number in base 10 and multiplying by 10 by adding zeros to the right and dividing by by removing the rightmost digit).
@@ -224,6 +220,7 @@ Effectively dividing the value by 20, without actually using the division instru
 
 ```
 
+
 정리를 하자면 `2.0^33/0x66666667 = 4.9999999982537702 ~= 5` 이기때문에 `0x66666667 ~= 2^33/5`이 된다.
 
 이를 분석한 연산에 적용해보면
@@ -255,25 +252,38 @@ Effectively dividing the value by 20, without actually using the division instru
 
 `(input/10)(버림)`으로 해석한 부분의 어셈블리 코드인데 여기서 `sar`연산은 음수를 연산할때 음의 방향으로 반올림을 해버린다.
 
-어차피 `sar`연산의 결과물의 소수점으로는 0.5밖에 나오질 않으니 사실상 올림이라고 봐도 무방하다. (`https://appleii.tistory.com/18`)
+어차피 `sar`연산의 결과물의 소수점으로는 짝수일때는 0, 홀수일때는 0.5밖에 나오질 않으니 사실상 홀수일때의 올림이라고 봐도 무방하다. (`https://appleii.tistory.com/18`)
 
 이 때문에 음의 방향으로 올림된 값을 없애기 위해서 `sar  eax,0x1f`를 더해준것이라 볼 수 있다.
 
 그런데 여기서 궁금증이 하나 생길 수 있다.
 
-엥? 그러면 `(input / 10)(버림)`의 결과물이 짝수로 나오면 어떻게 되는건데?
+엥? 그러면 `(input / 10)(버림)`의 결과물이 짝수로 나오면 어떻게 되는건데? 짝수로 나온다면 1을 더하면 안되지 않나?
 
--120, -121, -122 => -49
+이에 대한 궁금증을 풀기 위해 간단한 input의 예를 들어보도록 하겠다. (-120 ~ -129)
 
--123, -124 => -50
+`sar    edx,0x2` 명령어까지 실행하게 되면 edx에 저장되는 값이 각각
 
--125, -126, -127
+```
+n = input / 10
 
--128, -129
+-120, -121, -122 => -49 : (-1 - 4n) 
 
-그러게..('20.09.25)
+-123, -124 => -50 : (-2 - 4n)
 
-따라서 +1을 해주는 것같다. ('20.09.25) 계속 알아볼 예정.
+-125, -126, -127 => -51 : (-3 - 4n)
+
+-128, -129 => -52 : (-4 - 4n)
+```
+
+이렇게 된다. 그런데 -49 ~ -52 까지 `sar     edx,0x2` 명령어의 결과물은 -13이다. 이에 +1을 더하게 되면 -12가 되고 10을 곱해서 더해주면 모듈로 연산이 되게 된다.
+
+생각해보면 일의자리를 제외한 나머지 숫자가 같은경우에 위와같이 `sar     edx,0x2`의 결과값은 같아진다. 우리가 우려하던 올림이 필요없는 경우는 4의 배수의 값만 해당이 된다.
+
+왜냐하면 2의 배수여도 2를 나누는 순간 홀수가 된다면 어차피 음의 방향으로 올림이 되는 현상은 똑같이 나타나기 떄문에 (ex -50 => -25 => -13) 위의 네가지 경우의 수중에 마지막(-4 - 4n)만 신경쓰면 된다.
+
+마지막의 경우에도 나머지의 경우의 수처럼 (-1 - n)으로 결과가 나오기 떄문에 위에서 결과물에 짝수냐 홀수냐에 대한 문제는 없어진다.
+
 
 
 추가적으로 `http://index-of.es/Security/Addison%20Wesley%20-%20Hackers%20Delight%202002.pdf`에서 보면 3으로 나눌때는 0x55555556, 5로 나눌때는 0x66666667, 7로 나눌때는 0x92492493같이
@@ -282,13 +292,11 @@ Effectively dividing the value by 20, without actually using the division instru
 
 `idiv`명령어를 사용하는 것보다 이렇게 계산을 진행하는 것이 더 빠르다고 한다.
 
-‭-2,147,48648
 
 
+사무실에서 비주얼 스튜디오 2015로 동일하게 소스코드 구성해서 진행해본 결과 이런식으로 말고 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
 
-
-
-사무실에서 VS 2015로 동일하게 소스코드 구성해서 진행해본 결과 `idiv`를 사용해서 모듈러를 구현한것을 보았다.
+또 밑의 소스코드는 cpp로 modulo의 값을 정하지 않고 input처럼 stdin으로 받았을때 `idiv`를 사용하는 것을 볼 수 있다.
 
 
 ```cpp
@@ -306,8 +314,8 @@ int main(){
 
 	return 0;
 }
-
-
+```
+```
    0x0000000000400817 <+0>:     push   rbp
    0x0000000000400818 <+1>:     mov    rbp,rsp
    0x000000000040081b <+4>:     sub    rsp,0x10
@@ -345,9 +353,9 @@ int main(){
    0x000000000040089b <+132>:   call   0x400700 <__stack_chk_fail@plt>
    0x00000000004008a0 <+137>:   leave  
    0x00000000004008a1 <+138>:   ret    
+```
    
-   
-   
+```   
    0x0000000000400853 <+60>:    mov    eax,DWORD PTR [rbp-0x10]
    0x0000000000400856 <+63>:    mov    ecx,DWORD PTR [rbp-0xc]
    0x0000000000400859 <+66>:    cdq    
@@ -358,6 +366,18 @@ int main(){
    0x0000000000400864 <+77>:    mov    esi,eax
    
 ```
+
+#느낀 점
+
+드디어 말년병을 이겨내고(?) ~~꽤 오래 걸린것 같지만..?~~ C에서 modulo 연산을 어떻게 처리하는지 분석을 완료했다.
+
+v8이랑 meltdown 계속 읽어야겠다.. 얼른 맥북도 사야되는데... 전역도 해야되고... 공부도 할게 많다...
+
+화이팅 하자..!
+
+이 글을 읽어주시는 분도 화이팅 하고 좋은 하루 보내시길 바랍니다... ~~(마무리 무엇?)~~
+
+::smile::::smile::
 
 #Reference
 
