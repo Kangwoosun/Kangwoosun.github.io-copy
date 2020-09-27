@@ -267,6 +267,10 @@ Effectively dividing the value by 20, without actually using the division instru
 
 -123, -124 => -50
 
+-125, -126, -127
+
+-128, -129
+
 그러게..('20.09.25)
 
 따라서 +1을 해주는 것같다. ('20.09.25) 계속 알아볼 예정.
