@@ -367,7 +367,7 @@ int main(){
    
 ```
 
-#느낀 점
+# 느낀 점
 
 드디어 말년병을 이겨내고(?) ~~꽤 오래 걸린것 같지만..?~~ C에서 modulo 연산을 어떻게 처리하는지 분석을 완료했다.
 
@@ -379,7 +379,7 @@ v8이랑 meltdown 계속 읽어야겠다.. 얼른 맥북도 사야되는데... �
 
 :smile::smile:
 
-#Reference
+# Reference
 
 - [https://en.wikipedia.org/wiki/Modulo_operation](https://en.wikipedia.org/wiki/Modulo_operation)
 - [https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible](https://stackoverflow.com/questions/15596318/is-it-better-to-avoid-using-the-mod-operator-when-possible)
