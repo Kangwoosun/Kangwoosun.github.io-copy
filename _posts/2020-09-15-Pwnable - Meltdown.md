@@ -25,6 +25,27 @@ tags: kernel, computer architecture, leak, cache, race condition
 
 다 제쳐두고 왜 비순차적으로 실행을 시킬까? 병렬적으로? 답은 cpu의 활용도를 높이기 위해서다. 다시 말하면 cpu가 노는 시간을 줄이고 코드실행속도를 빠르게 하기 위해서이다.(필자가 알기로는 멀티코어 cpu에서 하나의 실행파일에 대해 더 빠르게 실행시키기 위해서 만든것으로 알고 있다.)
 
+그럼 순차적이지 않다는게 어떤것인지 알아보자. 예를 살펴보면,
+
+```
+y = input
+x = y + 1
+z = y + 2
+```
+
+이런 코드가 있을때 2,3번째 있는 코드는 1번째 값이 `stdin`이든 뭐든 input값이 들어 온뒤에 실행되어야 된다. 하지만 2,3번의 관계를 한번 살펴보면 굳이 3번째 코드가 2번째 코드를 실행한 다음에 실행할 필요가 없다.
+
+이때 2,3번째 코드를 병렬적으로 즉 비순차적으로 실행을 한다. 이것이 순차적이지 않다는 것이다.
+
+비순차 실행을 위해서는 위에서 설명한것과 같이 데이터 의존성, 파이프라인 등 고려해야 될 부분이 많다. 자세한 내용은 따로 찾아보도록 하고 여기서 알아야되는 내용은 `예측실행(Speculative Execution)`이다.
+
+
+
+
+
+
+
+
 
 
 
@@ -41,3 +62,4 @@ tags: kernel, computer architecture, leak, cache, race condition
 - [https://meltdownattack.com/meltdown.pdf](https://meltdownattack.com/meltdown.pdf)
 - [http://cloudrain21.com/out-of-order-processor-pipeline-1](http://cloudrain21.com/out-of-order-processor-pipeline-1)
 - [https://ko.wikipedia.org/wiki/%EB%B9%84%EC%88%9C%EC%B0%A8%EC%A0%81_%EB%AA%85%EB%A0%B9%EC%96%B4_%EC%B2%98%EB%A6%AC](https://ko.wikipedia.org/wiki/%EB%B9%84%EC%88%9C%EC%B0%A8%EC%A0%81_%EB%AA%85%EB%A0%B9%EC%96%B4_%EC%B2%98%EB%A6%AC)
+- [http://blog.skby.net/%ED%8C%8C%EC%9D%B4%ED%94%84%EB%9D%BC%EC%9D%B8-%EB%B6%84%EA%B8%B0%EC%98%88%EC%B8%A1%EA%B3%BC-%EC%98%88%EC%B8%A1%EC%8B%A4%ED%96%89/](http://blog.skby.net/%ED%8C%8C%EC%9D%B4%ED%94%84%EB%9D%BC%EC%9D%B8-%EB%B6%84%EA%B8%B0%EC%98%88%EC%B8%A1%EA%B3%BC-%EC%98%88%EC%B8%A1%EC%8B%A4%ED%96%89/)
