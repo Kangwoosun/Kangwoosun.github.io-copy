@@ -1,5 +1,5 @@
 ---
-title: Dreamhack - lke_ret2usr
+title: Dreamhack - lke-ret2usr
 categories:
 - pwnable
 tags: kernel, ret2usr
