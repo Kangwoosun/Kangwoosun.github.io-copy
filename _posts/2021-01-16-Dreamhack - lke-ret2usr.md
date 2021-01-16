@@ -1,8 +1,7 @@
 
-
 ---
 
-title: Dreamhack - lke-ret2usr
+title: Dreamhack - lke_ret2usr
 
 categories:
 
@@ -27,8 +26,12 @@ tags: kernel, ret2usr
 - Reference
 
   
+정말 오랜만에 포스팅을 진행하는 느낌은 기분탓입니다. ~~거의 다 기분탓이더라고요~~
 
-  
+아무튼 저번 주 부터 커널 익스를 공부하고 있는데 환경세팅때문에 진짜 너무 머리가 아프다.. 커널 익스보다 환경세팅에 더 오래 시간을 쓰는 느낌? 한 2:8정도로..?
+
+처음이라 오래 걸리는거라 믿고 갑니다.. v8도 공부해야되고 웹이랑 리버싱도 해야되는데!! 집중해라 내 몸아..
+
 
 # Introduction
 
@@ -241,6 +244,8 @@ MODULE_LICENSE("GPL");  /* 모듈 사용 허가(license)를 명시합니다. */
   iret으로 모드를 전환할시 rip, rsp, rflags, cs, ss를 조정해줘야 되는데
 
   각각 shell, dummy_stack, 0x202, 0x33, 0x2b (64bit 기준) 으로 설정해주고 익스를 진행해 주면 된다.
+  
+  여기서 잠깐? gs는 저번에 한번 파헤쳐 봤었는데
 
   
 
