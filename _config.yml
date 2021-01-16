@@ -488,7 +488,7 @@ duoshuo_info:
 # Facebook SDK Support.
 # https://github.com/iissnan/hexo-theme-next/pull/410
 facebook_sdk:
-  enable: false
+  enable: true
   app_id:       #<app_id>
   fb_admin:     #<user_id>
   like_button:  #true
@@ -498,7 +498,7 @@ facebook_sdk:
 # This plugin depends on Facebook SDK.
 # If facebook_sdk.enable is false, Facebook comments plugin is unavailable.
 facebook_comments_plugin:
-  enable: false
+  enable: true
   num_of_posts: 10  # min posts num is 1
   width: 100%       # default width is 550px
   scheme: light     # default scheme is light (light or dark)
@@ -628,7 +628,7 @@ pace: false
 #pace-theme-minimal
 # For example
 # pace_theme: pace-theme-center-simple
-pace_theme: pace-theme-minimal
+pace_theme: pace-theme-msc-osx
 
 # Canvas-nest
 canvas_nest: false
