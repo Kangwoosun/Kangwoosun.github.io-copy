@@ -1,27 +1,17 @@
 ---
-
 title: Dreamhack - lke_ret2usr
-
 categories:
-
 - pwnable
-
 tags: kernel, ret2usr
-
 ---
 
   
 
 - Introduction
-
 - Vunlnerability
-
 - Exploit
-
 - slv.py
-
-- 느낀 점
-
+- 느낀 점			
 - Reference
 
   
