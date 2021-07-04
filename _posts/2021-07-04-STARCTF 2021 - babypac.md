@@ -93,12 +93,12 @@ __int64 auth_0x400CDC()
   return input;
 }
 ```
-
+</br></br>
 # Vunlnerability
 
 1. `lock`, `auth` 함수에서 index의 범위를 검사하지 않아서 음수가 허용된다.
 2. `auth`에 `stack overflow`가 일어나는 backdoor가 존재한다.
-
+</br></br>
 # Exploit
 
 backdoor를 사용하기 위해서 `auth`에 접근해야 하는데 idx를 받을때 `atoi`함수를 통해서 32비트만 받기 때문에 `0x10A9FC70042`를 만들 수 없다.
@@ -107,7 +107,7 @@ backdoor를 사용하기 위해서 `auth`에 접근해야 하는데 idx를 받�
 
 여기서 문제는 
 
-```asm
+```assembly
 vuln_0x400BDC      vuln_0x400BDC
 vuln_0x400BDC
 vuln_0x400BDC      var_s0=  0
@@ -130,7 +130,7 @@ vuln_0x400BDC+2C   RETAA
 
 이 때문에 무지성으로 return address를 담으면 안되는데 이는 
 
-```asm
+```assembly
 lock_0x400AFC+74   loc_400B70
 lock_0x400AFC+74   LDURSW          X8, [X29,#var_4]
 lock_0x400AFC+78   LSL             X8, X8, #4
@@ -164,7 +164,7 @@ lock_0x400AFC+D0   B               loc_400BD0
 이제 넘어간 값은 `show` 함수에서 `name : %s`에서 노출되게 되게 되는데 하지만 이는 encrypt함수에서 연산이 끝난 값이기 때문에 복호화 과정을 통해 signed pointer를 얻을 수 있게 된다.
 
 이후 backdoor에서 stack overflow를 유발한 뒤에 `return-to-csu` 기법과 비슷하게 0x400F90 함수를 이용해서 ROP gadget을 엮어주면 된다.
-
+</br>
 
 # Decrypt
 
@@ -190,21 +190,28 @@ unsigned __int64 __fastcall sub_4009D8(__int64 a1)
 ```
 
 `a1` => n0
+
 `a1 ^ (a1 << 7)` => n1
+
 `(a1 ^ (unsigned __int64)(a1 << 7)) >> 11` => n2
+
 `((a1 ^ (a1 << 7) ^ ((a1 ^ (unsigned __int64)(a1 << 7)) >> 11)) << 31)` => n3
+
 `((a1 ^ (a1 << 7) ^ ((a1 ^ (unsigned __int64)(a1 << 7)) >> 11) ^ ((a1 ^ (a1 << 7) ^ ((a1 ^ (unsigned __int64)(a1 << 7)) >> 11)) << 31)) >> 13)` => n4
 
 로 정의를 하게 되면
 
 `n2 = n1 >> 11`
+
 `n3 = (n1 ^ (n1 >> 11)) << 31 = (n1 ^ n2) << 31`
+
 `n4 = (n1 ^ n2 ^ ((n1 ^ n2) << 31)) >> 13 = (n1 ^ n2 ^ n3) >> 13`
 이 되게 된다.
 
 여기서 return값을 e로 정의하면
 
 `e = n1 ^ n2 ^ n3 ^ n4`가 되고
+
 `e = (n1 ^ n2 ^ n3) ^ ((n1 ^ n2 ^ n3) >> 13)`가 되므로
 
 e의 상위 13bit는 `n1 ^ n2 ^ n3`값이 되게 된다. 이후 해당 13bit를 가지고 바로 아래 13bit와 xor연산을 하게 되면 26bit를 알 수 있게 되고 차례차례 진행하면 64bit 전체를 알 수 있게 된다.
@@ -416,6 +423,9 @@ PAC 관련 명령어를 실행시킬때 갑자기 `invalid pointer`가 뜨길래
 # Reference
 
 [https://blog.bi0s.in/2021/01/18/Pwn/StarCTF21-BabyPAC/](https://blog.bi0s.in/2021/01/18/Pwn/StarCTF21-BabyPAC/)
+
 [https://a1ex.online/2021/01/31/2021-starCTF/](https://a1ex.online/2021/01/31/2021-starCTF/)
+
 [https://www.xidoo.top/2021/01/23/starCTF2021/](https://www.xidoo.top/2021/01/23/starCTF2021/)
+
 [https://www.xidoo.top/2021/01/23/qemu/](https://www.xidoo.top/2021/01/23/qemu/)
