@@ -22,10 +22,13 @@ tags: heap, uaf, chunk_overlap
 
 간단한 heap문제인데 `glibc-2.27`에도 tcache 방어기법이 적용된 버전이 있는 줄은 몰랐다. glibc 버전이 같아도 세부 버전이 조금씩 다른듯 하다.
 
-chunk overlap 문제이고 malloc consolidate로 leak을 진행하고 chunk overlap으로 `tcache->fd`를 overwrite해서 `__free_hook`으로 할당하는 전형적인 힙 문제 익스로 진행한다.
 # Vunlnerability
 
 취약점은 `delete`함수에서 `free`를 해준 뒤 해당 포인터에 대한 NULL처리를 안해줘서 생기는 취약점이다.
+
+# Exploit
+
+chunk overlap 문제이고 malloc consolidate로 leak을 진행하고 chunk overlap으로 `tcache->fd`를 overwrite해서 `__free_hook`으로 할당하는 전형적인 힙 문제 익스로 진행한다.
 
 # slv.py
 
